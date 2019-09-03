@@ -43,13 +43,14 @@ const (
 var urlDescription = fmt.Sprintf("ESX or vCenter URL [%s]", envURL)
 var urlFlag = flag.String("url", osutil.GetEnvString(envURL, ""), urlDescription)
 
-var insecureDescription = fmt.Sprintf("Don't verify the server's certificate chain [%s]", envInsecure)
-var insecureFlag = flag.Bool("insecure", osutil.GetEnvBool(envInsecure, false), insecureDescription)
+//var insecureDescription = fmt.Sprintf("Don't verify the server's certificate chain [%s]", envInsecure)
+//var insecureFlag = flag.Bool("insecure", osutil.GetEnvBool(envInsecure, false), insecureDescription)
 
 /*
 
  */
 func Connect(ctx context.Context, hostname string, username string, password string) (*govmomi.Client, error) {
+
 	flag.Parse()
 
 	var err error
@@ -70,8 +71,7 @@ func Connect(ctx context.Context, hostname string, username string, password str
 		u.User = url.UserPassword(username, password)
 	}
 
-	log.Print(u)
-
 	// Connect and log in to ESX or vCenter
+	log.Print("Connected to vCenter manager and return context")
 	return govmomi.NewClient(ctx, u, true)
 }
