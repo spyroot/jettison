@@ -47,8 +47,8 @@ var urlFlag = flag.String("url", osutil.GetEnvString(envURL, ""), urlDescription
 //var insecureFlag = flag.Bool("insecure", osutil.GetEnvBool(envInsecure, false), insecureDescription)
 
 /*
-
- */
+  Function open up connection to vCenter or ESXi.
+*/
 func Connect(ctx context.Context, hostname string, username string, password string) (*govmomi.Client, error) {
 
 	flag.Parse()
