@@ -265,14 +265,11 @@ func VmFromCluster(ctx context.Context, c *vim25.Client, vmName string, clusterN
 	}
 
 	for _, cHost := range clusterHost {
-		log.Println("comparing", cHost.Name(), esxiName)
 		if cHost.Name() == esxiName {
-			log.Println("VM deployed in a cluster:", crs.Name(), "esxi host:", esxiName)
 			return cHost, crs, vm, nil
 		}
 	}
 
-	log.Println("IM here")
 	return nil, nil, nil, &VmNotFound{"vm not found"}
 }
 
