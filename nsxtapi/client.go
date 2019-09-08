@@ -185,9 +185,6 @@ func CreateStaticBinding(nsxClient *nsxt.APIClient,
 		if resp == nil || (resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403) {
 			return dhcpEntrySuccess, fmt.Errorf("failed recieve dhcp static binding for server %s: %s", serverId, err)
 		}
-	} else {
-		log.Println("got succsess for", newDhcpBinding.MacAddress, newDhcpBinding.IpAddress)
-
 	}
 
 	return dhcpEntrySuccess, nil
