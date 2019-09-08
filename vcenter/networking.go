@@ -170,7 +170,6 @@ func GetSwitchUuid(ctx context.Context, c *vim25.Client, vmName string) ([]Netwo
 		vdev := v.GetVirtualDevice()
 		if vdev != nil && vdev.DeviceInfo.GetDescription() != nil {
 			vdevSummary := v.GetVirtualDevice().DeviceInfo.GetDescription().Summary
-			log.Println(vdevSummary)
 			if strings.Contains(vdevSummary, "nsx.LogicalSwitch") {
 				opaqueData := strings.Split(vdevSummary, ":")
 				if len(opaqueData) > 0 {
