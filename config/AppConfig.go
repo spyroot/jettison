@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -35,15 +36,6 @@ import (
 const (
 	ConfigFile        = "/config.yml"
 	DefaultConfigPath = "/Users/spyroot/go/src/github.com/spyroot/jettison/src"
-)
-
-type Status int
-
-const (
-	Undefined Status = iota
-	Created
-	Deleted
-	Error
 )
 
 type SshGlobalEnvironments struct {
@@ -57,8 +49,8 @@ type SshGlobalEnvironments struct {
 
 // K8S configuration controller struct
 type Controller struct {
-	Name           string `yaml:"name"`
 	DesiredAddress string `yaml:"desiredAddress"`
+	Gateway        string `yaml:"gateway"`
 	VM             string `yaml:"vmName"`
 	UUID           string `yaml:"uuid"`
 	Mac            string
@@ -86,23 +78,34 @@ type AppConfig struct {
 			DhcpServerID  string
 		} `yaml:"nsxt"`
 
-		Controllers     []*Controller         `yaml:"controllers"`
+		ParallelJobs     int    `yaml:"parallelJobs"`
+		CleanupOnFailure bool   `yaml:"cleanupOnFailure"`
+		DeploymentName   string `yaml:"deploymentName"`
+
+		Controllers     NodeTemplate          `yaml:"controllers"`
+		WorkersTemplate NodeTemplate          `yaml:"workers"`
+		IngressTemplate NodeTemplate          `yaml:"ingress"`
 		SshDefaults     SshGlobalEnvironments `yaml:"sshGlobal"`
-		WorkersTemplate K8SNodes              `yaml:"workers"`
 	}
 }
 
-type K8SNodes struct {
-	Prefix         string `yaml:"prefix"`
-	DomainSuffix   string `yaml:"domainSufix"`
-	DesiredCount   string `yaml:"desiredCount"`
-	FirstNode      string `yaml:"startIP"`
-	LastNode       string `yaml:"stopIP"`
-	VmTemplateName string `yaml:"vmTemplateName"`
-	UUID           string `yaml:"uuid"`
-	vimCluster     string `yaml:"clusterName"`
-	mac            string
-	vimName        string
+func (a *AppConfig) GetDeploymentName() string {
+	return a.Infra.DeploymentName
+}
+
+// Returns data center name.
+func (a *AppConfig) GetControllersTemplate() *NodeTemplate {
+	return &a.Infra.Controllers
+}
+
+// Returns data center name.
+func (a *AppConfig) GetWorkersTemplate() *NodeTemplate {
+	return &a.Infra.WorkersTemplate
+}
+
+// Returns data center name.
+func (a *AppConfig) GetIngresTemplate() *NodeTemplate {
+	return &a.Infra.IngressTemplate
 }
 
 // Returns data center name.
@@ -134,16 +137,16 @@ func StatusString(status Status) string {
 	return "undefined"
 }
 
-// Return controller related variable (VM name, Desired IP Address etc)
-func (a AppConfig) GetController(uuid string) (*Controller, error) {
-
-	for _, val := range a.Infra.Controllers {
-		if val.UUID == uuid {
-			return val, nil
-		}
-	}
-	return nil, fmt.Errorf("VM reference not found: %s", uuid)
-}
+//// Return controller related variable (VM name, Desired IP Address etc)
+//func (a AppConfig) GetController(uuid string) (*Controller, error) {
+//
+//	for _, val := range a.Infra.Controllers {
+//		if val.UUID == uuid {
+//			return val, nil
+//		}
+//	}
+//	return nil, fmt.Errorf("VM reference not found: %s", uuid)
+//}
 
 //
 //// Return controller related variable (VM name, Desired IP Address etc)
@@ -167,6 +170,10 @@ func (a AppConfig) GetController(uuid string) (*Controller, error) {
 // Internal function validates mandatory configuration element.
 // A Mandatory element are vCenter/ESZi hostname, username, password etc
 func validate(appConfig *AppConfig) (bool, error) {
+
+	if appConfig.Infra.DeploymentName == "" {
+		return false, errors.New("missing deployment name")
+	}
 
 	if appConfig.Infra.Vcenter.Hostname == "" {
 		return false, errors.New("missing vCenter/ESXi hostname entry")
@@ -192,10 +199,40 @@ func validate(appConfig *AppConfig) (bool, error) {
 		return false, errors.New("missing NSX-T Manager password")
 	}
 
+	/* parse IP and set IP addr struct */
+	ipv4Addr, ipv4Net, err := net.ParseCIDR(appConfig.GetControllersTemplate().DesiredAddress)
+	if err != nil {
+		return false, fmt.Errorf("failed parse controllers desired address pool : %s", err)
+	}
+
+	appConfig.Infra.Controllers.IPv4Addr = ipv4Addr
+	appConfig.Infra.Controllers.IPv4Net = ipv4Net
+
+	ipv4Addr, ipv4Net, err = net.ParseCIDR(appConfig.GetWorkersTemplate().DesiredAddress)
+	if err != nil {
+		return false, fmt.Errorf("failed parse controllers desired address pool : %s", err)
+	}
+	appConfig.Infra.WorkersTemplate.IPv4Net = ipv4Net
+	appConfig.Infra.WorkersTemplate.IPv4Addr = ipv4Addr
+
+	ipv4Addr, ipv4Net, err = net.ParseCIDR(appConfig.GetIngresTemplate().DesiredAddress)
+	if err != nil {
+		return false, fmt.Errorf("failed parse ingress desired address : %s", err)
+	}
+
+	appConfig.Infra.IngressTemplate.IPv4Addr = ipv4Addr
+	appConfig.Infra.IngressTemplate.IPv4Net = ipv4Net
+
+	if appConfig.GetControllersTemplate().GetSwitchName() == "" {
+		return false, errors.New("missing logical switch name")
+	}
+
 	return true, nil
 }
 
-// Read config.yml file and serialize everything in AppConfig struct.
+/**
+  Reads condfig.yml file and serialize everything in AppConfig struct.
+*/
 func ReadConfig() (AppConfig, error) {
 
 	var appConfig AppConfig
