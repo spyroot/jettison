@@ -23,7 +23,7 @@ package nsxtapi
 import (
 	"errors"
 	"fmt"
-	nsxt "github.com/vmware/go-vmware-nsxt"
+	"github.com/vmware/go-vmware-nsxt"
 	"github.com/vmware/go-vmware-nsxt/manager"
 	"log"
 	"net/http"
@@ -32,6 +32,27 @@ import (
 )
 
 type Comparator func(manager.DhcpStaticBinding, string) bool
+
+var DhcpLookupMap = map[string]func(dhcpEntry manager.DhcpStaticBinding, val string) bool{
+	"mac": func(dhcpEntry manager.DhcpStaticBinding, macAddr string) bool {
+		if dhcpEntry.MacAddress == macAddr {
+			return true
+		}
+		return false
+	},
+	"ip": func(dhcpEntry manager.DhcpStaticBinding, ipAddr string) bool {
+		if dhcpEntry.IpAddress == ipAddr {
+			return true
+		}
+		return false
+	},
+	"ipmac-pair": func(dhcpEntry manager.DhcpStaticBinding, ipAddr string) bool {
+		if dhcpEntry.IpAddress == ipAddr {
+			return true
+		}
+		return false
+	},
+}
 
 // Open NSX connection and return nsxtapi.APIClient context.
 func Connect(managerHost string, user string, password string) (nsxt.APIClient, error) {
@@ -47,8 +68,6 @@ func Connect(managerHost string, user string, password string) (nsxt.APIClient, 
 	if password == "" {
 		return nsxt.APIClient{}, errors.New("missing NSX-T password")
 	}
-
-	log.Print("Connecting to nsx-t manager")
 
 	nsxtClient, err := nsxt.NewAPIClient(&nsxt.Configuration{
 		BasePath: fmt.Sprintf("https://%s/api/v1", managerHost),
@@ -67,7 +86,7 @@ func Connect(managerHost string, user string, password string) (nsxt.APIClient, 
 		return *nsxtClient, fmt.Errorf("error creating NSX-T API client: %s", err)
 	}
 
-	log.Print("Connecting to nsx-t manager")
+	log.Print("Connected to nsx-t manager and return context")
 	return *nsxtClient, nil
 }
 
@@ -145,7 +164,8 @@ func CreateStaticBinding(nsxClient *nsxt.APIClient,
 	serverId string,
 	macaddr string,
 	ipaddr string,
-	hostname string) (manager.DhcpStaticBinding, error) {
+	hostname string,
+	gateway string) (manager.DhcpStaticBinding, error) {
 
 	var (
 		resp             *http.Response
@@ -157,12 +177,17 @@ func CreateStaticBinding(nsxClient *nsxt.APIClient,
 	newDhcpBinding.IpAddress = ipaddr
 	newDhcpBinding.DisplayName = hostname
 	newDhcpBinding.HostName = hostname
+	newDhcpBinding.GatewayIp = gateway
 
 	dhcpEntrySuccess, resp, err := nsxClient.ServicesApi.CreateDhcpStaticBinding(nsxClient.Context, serverId, newDhcpBinding)
 	if err != nil {
-		if resp == nil || (resp.StatusCode == 401 || resp.StatusCode == 403) {
+		log.Println("error from nsxt-t", err)
+		if resp == nil || (resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403) {
 			return dhcpEntrySuccess, fmt.Errorf("failed recieve dhcp static binding for server %s: %s", serverId, err)
 		}
+	} else {
+		log.Println("got succsess for", newDhcpBinding.MacAddress, newDhcpBinding.IpAddress)
+
 	}
 
 	return dhcpEntrySuccess, nil
