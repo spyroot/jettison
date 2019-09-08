@@ -152,6 +152,7 @@ func Test_sshCopyid(t *testing.T) {
 			}, true,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := SshCopyId(tt.args.sshenv, tt.args.host); (err != nil) != tt.wantErr {
