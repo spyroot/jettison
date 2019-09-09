@@ -4,6 +4,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spyroot/jettison/config"
 	"github.com/stretchr/testify/assert"
+	"log"
 	"testing"
 
 	"math/rand"
@@ -36,6 +37,7 @@ func CreateSyntheticValidNode(t *testing.T) *config.NodeTemplate {
 	switchUuid := uuid.New().String()
 	node0.SetSwitchUuid(switchUuid)
 	assert.Equal(t, switchUuid, node0.GetSwitchUuid(), "switch uuid mismatch")
+	log.Println(switchUuid)
 
 	routerUuid := uuid.New().String()
 	node0.SetRouterUuid(routerUuid)
