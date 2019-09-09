@@ -157,17 +157,16 @@ func TestCreateDeployment(t *testing.T) {
 				if ok {
 					for _, n := range nodes {
 						// expect vs actual
-						assert.Equal(t, n.Name, argNodes[0].Name, "")
-						//						assert.Equal(t, n.DesiredAddress, argNodes[0].DesiredAddress, "")
-						assert.Equal(t, n.IPv4Addr.String(), argNodes[0].IPv4Addr.String(), "")
-						//						assert.Equal(t, n.VmTemplateName, argNodes[0].VmTemplateName, "")
-						assert.Equal(t, n.Mac[0], argNodes[0].Mac[0], "")
-						assert.Equal(t, n.GetVimName(), argNodes[0].GetVimName(), "")
-						assert.Equal(t, n.GetFolderPath(), argNodes[0].GetFolderPath(), "")
-						assert.Equal(t, n.GetSwitcUuid(), argNodes[0].GetSwitcUuid(), "")
-						assert.Equal(t, n.GetRouterUuid(), argNodes[0].GetRouterUuid(), "")
-						assert.Equal(t, n.VimCluster, argNodes[0].VimCluster, "")
-						assert.Equal(t, n.Type, argNodes[0].Type, "")
+						assert.Equal(t, n.Name, argNodes[0].Name, " name mismatch")
+						assert.Equal(t, n.IPv4Addr.String(), argNodes[0].IPv4Addr.String(), " ip addr mismatch")
+						assert.Equal(t, n.Mac[0], argNodes[0].Mac[0], "mac mismatch")
+						assert.Equal(t, n.GetVimName(), argNodes[0].GetVimName(), "vim name mismatch")
+						assert.Equal(t, n.GetFolderPath(), argNodes[0].GetFolderPath(), "folder mismatch")
+						//assert.Equal(t, n.GetSwitchUuid(), argNodes[0].GetSwitchUuid(), "switch mismatch")
+						assert.Equal(t, n.GetDhcpId(), argNodes[0].GetDhcpId(), "dhcp id mismatch")
+						assert.Equal(t, n.GetRouterUuid(), argNodes[0].GetRouterUuid(), "router uuid mismatch")
+						assert.Equal(t, n.VimCluster, argNodes[0].VimCluster, "cluster name mismatch")
+						assert.Equal(t, n.Type, argNodes[0].Type, "type mismatch")
 					}
 				}
 
