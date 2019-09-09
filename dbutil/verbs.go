@@ -40,6 +40,7 @@ func CreateTablesIfNeed(db *sql.DB) error {
 		SwitchUuid   TEXT not null,
 		RouterUuid   TEXT not null,
 		ClusterName  TEXT not null,
+		DhcpUuid     TEXT not null,
 		Type         TEXT not null
 	);`
 
@@ -122,11 +123,7 @@ func CleanUp(db *sql.DB) error {
 	return nil
 }
 
-//
-//VimFolder    TEXT not null,
-//SwitchUuid   TEXT not null,
-//RouterUuid   TEXT not null,
-
+// plain connect, caller need validate that path to database is valid
 func Connect(dbpath string) (*sql.DB, error) {
 
 	database, err := sql.Open("sqlite3", dbpath)
@@ -176,6 +173,7 @@ func CreateDatabase() (*sql.DB, error) {
 		SwitchUuid   TEXT not null,
 		RouterUuid   TEXT not null,
 		ClusterName  TEXT not null,
+		DhcpUuid     TEXT not null,
 		Type         TEXT not null
 	);`
 
@@ -277,7 +275,7 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 	}
 
 	query := `SELECT JettisonUuid, VimUuid, VimName, IPv4Addr, MacAddr, 
-				VimFolder, SwitchUuid, RouterUuid, ClusterName, Type FROM nodes 
+				VimFolder, SwitchUuid, RouterUuid, ClusterName, DhcpUuid, Type FROM nodes 
 				WHERE id = (SELECT id FROM deployment WHERE DeploymentName is ?)`
 
 	rows, err := db.Query(query, depName)
@@ -301,10 +299,11 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 			SwitchUuid  = ""
 			RouterUuid  = ""
 			ClusterName = ""
+			DhcpId      = ""
 		)
 		err = rows.Scan(&node.Name, &node.UUID, &vimName,
 			&node.IPv4AddrStr, &mac, &vimFolder,
-			&SwitchUuid, &RouterUuid, &ClusterName, &nodeType)
+			&SwitchUuid, &RouterUuid, &ClusterName, &DhcpId, &nodeType)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -317,6 +316,7 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 		node.SetFolderPath(vimFolder)
 		node.SetSwitchUuid(SwitchUuid)
 		node.SetRouterUuid(RouterUuid)
+		node.SetDhcpId(DhcpId)
 		node.VimCluster = ClusterName
 
 		nodes = append(nodes, node)
@@ -409,8 +409,9 @@ func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
 		SwitchUuid,
 		RouterUuid,
 		ClusterName,
+		DhcpUuid,
 		Type
-  	) VALUES(?,?,?,?,?,?,?,?,?,?,?);`
+  	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?);`
 
 	stmt2, err := tx.Prepare(query)
 	if err != nil {
@@ -435,6 +436,7 @@ func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
 		node.GetSwitchUuid(),
 		node.GetRouterUuid(),
 		node.VimCluster,
+		node.GetDhcpId(),
 		node.Type.String(),
 	)
 	if err != nil {
@@ -513,8 +515,9 @@ func CreateDeployment(db *sql.DB, nodes *[]*config.NodeTemplate, depName string)
 		SwitchUuid,
 		RouterUuid,
 		ClusterName,
+		DhcpUuid,
 		Type
-  	) VALUES(?,?,?,?,?,?,?,?,?,?,?);`
+  	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?);`
 
 	stmt2, err := tx.Prepare(query)
 	if err != nil {
@@ -540,7 +543,8 @@ func CreateDeployment(db *sql.DB, nodes *[]*config.NodeTemplate, depName string)
 			node.GetSwitchName(),   // 8
 			node.GetRouterUuid(),   // 9
 			node.VimCluster,        // 10
-			node.Type.String())     // 11
+			node.GetDhcpId(),       // 11
+			node.Type.String())     // 12
 		if err != nil {
 			_ = tx.Rollback()
 			return errors.Trace(err)
