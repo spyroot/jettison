@@ -13,6 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+Supplementally tool that main purpose generate certs
+
 Author Mustafa Bayramov
 mbaraymov@vmware.com
 */
@@ -80,6 +82,7 @@ func (node *JsonCaConfig) WriteToFile(filePath string) error {
 	return nil
 }
 
+// Generic Cert names
 type CertRequestNames struct {
 	C  string `json:"C"`
 	L  string `json:"L"`
@@ -88,6 +91,7 @@ type CertRequestNames struct {
 	ST string `json:"ST"`
 }
 
+// Generic Cert Request
 type CertRequest struct {
 	CN  string `json:"CN", default:"admin"`
 	Key struct {
