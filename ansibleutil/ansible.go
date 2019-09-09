@@ -37,6 +37,7 @@ package ansibleutil
 import (
 	"bufio"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
@@ -87,7 +88,8 @@ func parse(filePath string, start int64, parse func(string) (string, bool)) ([]P
 		results     []Parser
 	)
 
-	inputFile, err := os.Open(filePath)
+	// open for append or create new onw
+	inputFile, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -415,4 +417,65 @@ func Ping(ansibleCommand AnsibleCommand) (string, error) {
 	}
 
 	return string(b), nil
+}
+
+type PlaybookSection []struct {
+	Hosts  string            `yaml:"hosts"`
+	Become bool              `yaml:"become"`
+	Roles  []string          `yaml:"roles"`
+	Vars   map[string]string `yaml:"vars,omitempty"`
+	//Vars   struct {
+	//	K8Sowner string `yaml:"k8sowner"`
+	//} `yaml:"vars,omitempty"`
+}
+
+/*
+   Function generate a playbook for each deployment
+*/
+func CreateTenantPlaybook(filePath string, templatePath string, vars map[string]string) error {
+
+	data, err := ioutil.ReadFile(templatePath)
+	if err != nil {
+		return err
+	}
+
+	var playbook = PlaybookSection{}
+	log.Println(" Parsing template", templatePath, "file.")
+	err = yaml.Unmarshal(data, &playbook)
+	if err != nil {
+		return err
+	}
+
+	// open for append or create new onw
+	inputFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := inputFile.Close(); err != nil {
+			log.Println("failed to close", filePath, err)
+		}
+	}()
+
+	// populate vars in all section
+	for i, _ := range playbook {
+		playbook[i].Vars = map[string]string{}
+		for k, v := range vars {
+			playbook[i].Vars[k] = v
+		}
+	}
+
+	// marshal yaml to playbook
+	log.Println(" Writing playbook", filePath, "file.")
+	deploymentBook, err := yaml.Marshal(&playbook)
+	if err != nil {
+		return err
+	}
+	_, err = inputFile.Write(deploymentBook)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
