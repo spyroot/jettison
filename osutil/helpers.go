@@ -52,15 +52,13 @@ func CheckWriteReadAccess(filename string) bool {
 
 // function check if file exist or not
 func CheckIfExist(filename string) bool {
-	fileInfo, err := os.Stat(filename)
+	_, err := os.Stat(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Fatal("File does not exist.")
+			return false
 		}
 		return true
 	}
-	log.Println("File does exist. File information:")
-	log.Println(fileInfo)
 	return true
 }
 
