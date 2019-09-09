@@ -105,6 +105,11 @@ func (d *Deployment) FindIngress(name string) (*config.NodeTemplate, error) {
 	return nil, fmt.Errorf("ingress node not found")
 }
 
+func (d *Deployment) NumberOfNodes() int {
+	// todo do check for null
+	return len(d.ClusterName) + len(d.Workers) + len(d.Ingress)
+}
+
 func (d *Deployment) allocateAddress(poolName string) (string, error) {
 
 	// get the pool
