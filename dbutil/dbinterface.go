@@ -6,6 +6,7 @@ import (
 	"github.com/juju/errors"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spyroot/jettison/config"
+	"github.com/spyroot/jettison/logging"
 	"log"
 	"net"
 )
@@ -19,11 +20,13 @@ func CreateTablesIfNeed(db *sql.DB) error {
 
 	statement, err := db.Prepare(query)
 	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
 	_, err = statement.Exec()
 	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
@@ -44,15 +47,39 @@ func CreateTablesIfNeed(db *sql.DB) error {
 		Type         TEXT not null
 	);`
 
-	// TODO add everywhere
+	// TODO add createifneed everwhere.
 
 	statement, err = db.Prepare(query)
 	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
 	_, err = statement.Exec()
 	if err != nil {
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	query = `CREATE TABLE IF NOT EXISTS podipblock
+	(
+		cidrid       INTEGER PRIMARY KEY AUTOINCREMENT,
+		id           INTEGER not null constraint nodes_deployment__fk references deployment,
+		nodeid       INTEGER not null constraint podblocks_nodes__fk references nodes,
+		ipblock      TEXT not null,
+		cidrblock    TEXT not null,
+		type		 INTEGER not null
+	)`
+
+	statement, err = db.Prepare(query)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	_, err = statement.Exec()
+	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
@@ -226,22 +253,23 @@ func deleteNodes(db *sql.DB, depName string) error {
 /**
   Function delete deployment from database.
 */
-func DeleteDeployment(db *sql.DB, depName string) error {
+func DeleteDeployment(db *sql.DB, projectName string) error {
 
 	if db == nil {
 		return fmt.Errorf("database connector is nil")
 	}
 
-	err := deleteNodes(db, depName)
+	err := deleteNodes(db, projectName)
 	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
-	log.Println("Deleting deployment ", depName)
-	query := `DELETE FROM deployment WHERE DeploymentName = ?`
+	query := `DELETE FROM nodes WHERE id = (SELECT id FROM deployment WHERE DeploymentName = ?)`
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 
@@ -251,9 +279,49 @@ func DeleteDeployment(db *sql.DB, depName string) error {
 		}
 	}()
 
-	_, err = stmt.Exec(depName)
+	_, err = stmt.Exec(projectName)
 	if err != nil {
-		log.Println("db.Prepare error", err)
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	query = `DELETE FROM podipblock WHERE id = (SELECT id FROM deployment WHERE DeploymentName = ?)`
+
+	stmt, err = db.Prepare(query)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			log.Println("failed to close db smtm", err)
+		}
+	}()
+
+	_, err = stmt.Exec(projectName)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	query = `DELETE FROM deployment WHERE DeploymentName = ?`
+
+	stmt, err = db.Prepare(query)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return errors.Trace(err)
+	}
+
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			log.Println("failed to close db smtm", err)
+		}
+	}()
+
+	_, err = stmt.Exec(projectName)
+	if err != nil {
+		logging.ErrorLogging(err)
 		return errors.Trace(err)
 	}
 	return nil
@@ -310,7 +378,7 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 
 		// add mac
 		node.Mac = append(node.Mac, mac)
-		node.Type = config.GetNodeType(nodeType)
+		node.Type = jettypes.GetNodeType(nodeType)
 		node.IPv4Addr = net.ParseIP(node.IPv4AddrStr)
 		node.SetVimName(vimName)
 		node.SetFolderPath(vimFolder)
@@ -451,6 +519,12 @@ func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
 	}
 
 	return nil
+}
+
+func createDeployment(db *sql.DB, node *config.NodeTemplate, depName string) error {
+	var nodes []*config.NodeTemplate
+	nodes = append(nodes, node)
+	return CreateDeployment(db, &nodes, depName)
 }
 
 /**
