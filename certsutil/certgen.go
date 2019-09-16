@@ -13,7 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Supplementally tool that main purpose generate certs
+Supplemental tool that main purpose generate certs by leveraging external
+tool or ca.
 
 Author Mustafa Bayramov
 mbaraymov@vmware.com
@@ -23,16 +24,73 @@ package certsutil
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/spyroot/jettison/config"
-	"github.com/spyroot/jettison/consts"
-	"github.com/spyroot/jettison/internal"
+	"github.com/spyroot/jettison/logging"
+	"github.com/spyroot/jettison/osutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 )
 
+type CertClient interface {
+	GetIpAddress() string
+	GetHostname() string
+}
+
+type CertificateFileRespond interface {
+	getCertificateReq() string
+	getCertificate() string
+	getConfig() string
+	getKey() string
+}
+
+// Generic Cert Request
+type CertRespond struct {
+	// full path to csr file  ca.csr
+	cacsr string
+
+	// full path to key file ca.pem
+	cakey string
+
+	// full path to key file ca.pem
+	cacert string
+
+	// full path to key file ca.pem
+
+	caconfig string
+}
+
+func (c *CertRespond) getCertificateReq() string {
+	if c != nil {
+		return c.cacsr
+	}
+	return ""
+}
+
+func (c *CertRespond) getCertificate() string {
+	if c != nil {
+		return c.cacert
+	}
+	return ""
+}
+
+func (c *CertRespond) getKey() string {
+	if c != nil {
+		return c.cakey
+	}
+	return ""
+}
+
+func (c *CertRespond) getConfig() string {
+	if c != nil {
+		return c.caconfig
+	}
+	return ""
+}
+
+/**
+  json ca config file request
+*/
 type JsonCaConfig struct {
 	Signing struct {
 		Default struct {
@@ -47,13 +105,9 @@ type JsonCaConfig struct {
 	} `json:"signing"`
 }
 
-var additionalHost = []string{
-	"172.16.88.100",
-	"127.0.0.1",
-	"localhost",
-	"kubernetes.default",
-}
-
+/**
+  Writes a a json config to a file
+*/
 func (node *JsonCaConfig) WriteToFile(filePath string) error {
 
 	inputFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
@@ -73,7 +127,6 @@ func (node *JsonCaConfig) WriteToFile(filePath string) error {
 		return err
 	}
 
-	log.Println(" Writing cert", filePath, "file.")
 	_, err = inputFile.Write(p)
 	if err != nil {
 		return err
@@ -93,7 +146,12 @@ type CertRequestNames struct {
 
 // Generic Cert Request
 type CertRequest struct {
-	CN  string `json:"CN", default:"admin"`
+	path      string
+	tenant    string
+	cfssl     string
+	cfssljson string
+
+	CN  string `json:"CN"`
 	Key struct {
 		Algo string `json:"algo"`
 		Size int    `json:"size"`
@@ -104,25 +162,28 @@ type CertRequest struct {
 /*
  *  Default constructor for ssl cert
  */
-func NewCertRequest() CertRequest {
-	something := CertRequest{}
-	something.CN = "admin"
-	something.Key.Algo = "rsa"
-	something.Key.Size = 2048
+func NewCertRequest() *CertRequest {
 
-	something.Names = []CertRequestNames{CertRequestNames{
-		C:  "Auto",
-		L:  "Auto",
-		O:  "system:masters",
-		OU: "VMware",
-		ST: "VMware",
-	}}
+	newCert := &CertRequest{}
+	newCert.CN = "admin"
+	newCert.Key.Algo = "rsa"
+	newCert.Key.Size = 2048
 
-	return something
+	newCert.Names = []CertRequestNames{
+		{
+			C:  "Auto",
+			L:  "Auto",
+			O:  "system:masters",
+			OU: "VMware",
+			ST: "VMware",
+		},
+	}
+	return newCert
 }
 
 // serialize cert as json
 func (node *CertRequest) PrintAsJson() {
+
 	var p []byte
 	p, err := json.MarshalIndent(node, "", "\t")
 	if err != nil {
@@ -130,6 +191,7 @@ func (node *CertRequest) PrintAsJson() {
 		return
 	}
 	fmt.Printf("%s \n", p)
+
 }
 
 // serialize cert to a file
@@ -152,7 +214,6 @@ func (node *CertRequest) WriteToFile(filePath string) error {
 		return err
 	}
 
-	log.Println(" Writing cert", filePath, "file.")
 	_, err = inputFile.Write(p)
 	if err != nil {
 		return err
@@ -161,231 +222,132 @@ func (node *CertRequest) WriteToFile(filePath string) error {
 	return nil
 }
 
-/**
-  Function iterate over all map that store path to each shell
-  and if we find one set bool true
-*/
-func CheckIfExist() {
+/* string format printer */
+func Tprintf(format string, params map[string]string) string {
 
-	// iterate over all shell path and set flags
-	for k, _ := range consts.ExecDependency {
-		_, err := exec.LookPath(k)
-		if err != nil {
-			consts.ExecDependency[k] = false
-		}
+	for key, val := range params {
+		format = strings.Replace(format, "%{"+key+"}s", fmt.Sprintf("%s", val), -1)
 	}
+
+	return format
+}
+
+// list of mandatory attrs for makeCert
+var certRequestFields = []string{"cacert", "cakey", "config",
+	"profile", "jsonfile", "bare", "cfssljson", "cfssl"}
+
+/**
+  Initialize all CA certificate and key
+*/
+func InitCa(certReq *CertRequest, dir string) (CertificateFileRespond, error) {
+
+	jsonFile := path.Join(dir, "/", certReq.tenant+".ca-csr.json")
+	if !osutil.CheckIfExist(jsonFile) {
+		err := fmt.Errorf("failed create certificates no ca config present %s", jsonFile)
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+
+	cmd := fmt.Sprintf("%s gencert -initca %s | %s -bare ca",
+		certReq.cfssl, jsonFile, certReq.cfssljson)
+
+	err := osutil.ChangeAndExec(dir, cmd)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+
+	csr := path.Join(dir, "/", "ca.csr")
+	cert := path.Join(dir, "/", "ca.pem")
+	privatekey := path.Join(dir, "/", "ca-key.pem")
+
+	if !osutil.CheckIfExist(csr) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+	if !osutil.CheckIfExist(cert) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+	if !osutil.CheckIfExist(privatekey) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+
+	resp := &CertRespond{
+		csr,
+		privatekey,
+		cert,
+		jsonFile,
+	}
+
+	return resp, nil
 }
 
 /**
 
  */
-func buildTenantDirs(homeDir string, projectName string) error {
+func MakeCert(certReq *CertRequest, args map[string]string, dir string) (*CertRespond, error) {
 
-	// create home dir
-	err := os.MkdirAll(homeDir, os.ModePerm)
+	// check all mandatory fields
+	for _, field := range certRequestFields {
+		if _, ok := args[field]; !ok {
+			err := fmt.Errorf("%s mandatory key", field)
+			logging.ErrorLogging(err)
+			return nil, err
+		}
+	}
+
+	var s string
+	if _, ok := args["hostname"]; ok {
+		s = "%{cfssl}s gencert -ca=%{cacert}s -ca-key=%{cakey}s " +
+			"-config=%{config}s -hostname=%{hostname}s -profile=%{profile}s " +
+			"%{jsonfile}s | %{cfssljson}s -bare %{bare}s"
+	} else {
+		s = "%{cfssl}s gencert -ca=%{cacert}s -ca-key=%{cakey}s " +
+			"-config=%{config}s -profile=%{profile}s " +
+			"%{jsonfile}s | %{cfssljson}s -bare %{bare}s"
+	}
+
+	// build cmd
+	cmd := Tprintf(s, args)
+
+	// execute cfssl tool
+	err := osutil.ChangeAndExec(dir, cmd)
 	if err != nil {
-		log.Println("failed create tenant project dir")
+		logging.ErrorLogging(err)
+		return nil, err
 	}
 
-	tenantDir := path.Join(homeDir, "/", projectName)
-	err = os.MkdirAll(tenantDir, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("failed create tenant project dir %s", err)
+	bare, _ := args["bare"]
+	csr := path.Join(dir, "/", bare+".csr")
+	cert := path.Join(dir, "/", bare+".pem")
+	privatekey := path.Join(dir, "/", bare+"-key.pem")
+
+	if !osutil.CheckIfExist(csr) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+	if !osutil.CheckIfExist(cert) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
+	}
+	if !osutil.CheckIfExist(privatekey) {
+		err := fmt.Errorf("failed create certificates")
+		logging.ErrorLogging(err)
+		return nil, err
 	}
 
-	for _, dir := range consts.TenantDirs {
-		newDir := path.Join(tenantDir, "/", dir)
-		err = os.MkdirAll(newDir, os.ModePerm)
-		if err != nil {
-			return fmt.Errorf("failed create tenant project dir %s", err)
-		}
-	}
-
-	return nil
-}
-
-/**
-  Function take dir that called need to take before calling exec
-*/
-func changeAndExec(dir string, cmd string) error {
-
-	log.Println("Executing in dir", dir)
-
-	err := os.Chdir(dir)
-	if err != nil {
-		return err
-	}
-
-	log.Println(cmd)
-	_, err = exec.Command("bash", "-c", cmd).Output()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-/**
-  Function create a list of host as comma separated list
-*/
-func hostAsList(nodes []*config.NodeTemplate) string {
-
-	var list []string
-	for _, v := range nodes {
-		list = append(list, v.IPv4AddrStr)
-	}
-
-	for _, v := range nodes {
-		additionalHost = append(additionalHost, v.IPv4AddrStr)
-	}
-
-	return strings.Join(list[:], ",")
-}
-
-/*
- *  Function generate certs
- */
-func GenerateTenantCerts(vim *internal.Vim, nodes []*config.NodeTemplate, vars map[string]string) error {
-
-	var (
-		name    = vim.AppConfig.GetDeploymentName()
-		homeDir = vim.AppConfig.GetAnsible().AnsibleTemplates
-	)
-
-	err := buildTenantDirs(homeDir, name)
-	if err != nil {
-		return err
-	}
-
-	jsonCaConfig := JsonCaConfig{}
-	jsonCaConfig.Signing.Default.Expiry = consts.DefaultExpire
-	jsonCaConfig.Signing.Profiles.Kubernetes.Usages = []string{
-		"signing",
-		"key encipherment",
-		"server auth",
-		"client auth",
-	}
-
-	// generate ca config
-	jsonCaConfig.Signing.Profiles.Kubernetes.Expiry = consts.DefaultExpire
-	caConfig := name + ".ca-config.json"
-	dir := path.Join(homeDir, "/", name, "/ca/")
-	configPath := path.Join(dir, caConfig)
-	err = jsonCaConfig.WriteToFile(configPath)
-	if err != nil {
-		return err
-	}
-	vars[consts.AnsibleCaConfigJson] = configPath
-
-	// ca cert
-	{
-		certRequest := NewCertRequest()
-		jsonReqFile := name + ".ca-csr.json"
-		certRequest.Names[0].O = "Kubernetes"
-		dir := path.Join(homeDir, "/", name, "/ca/")
-		jsonReqPath := path.Join(dir, jsonReqFile)
-		// write a cert request to file
-		err := certRequest.WriteToFile(jsonReqPath)
-		if err != nil {
-			return err
-		}
-		// generate cert
-		vars[consts.AnsibleKeyCaJson] = jsonReqPath
-		cmd := fmt.Sprintf(consts.InitCertCa, jsonReqPath)
-		err = changeAndExec(dir, cmd)
-		if err != nil {
-			return err
-		}
-	}
-
-	{
-		// admin cert
-		adminCertRequest := NewCertRequest()
-		adminCertRequest.Names[0].O = "system:masters"
-		adminCertRequest.Names[0].OU = "Kubernetes"
-		certRequest := name + ".admin-csr.json"
-		dir = path.Join(homeDir, "/", name, "/admin/")
-		jsonReqPath := path.Join(dir, certRequest)
-		err := adminCertRequest.WriteToFile(jsonReqPath)
-		if err != nil {
-			return err
-		}
-		vars[consts.AnsibleJsonRequest] = jsonReqPath
-		err = os.Chdir(dir)
-		if err != nil {
-			return err
-		}
-		cmd := fmt.Sprintf(consts.AdminCertGen, vars[consts.AnsibleCaConfigJson], certRequest)
-		err = changeAndExec(dir, cmd)
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, node := range nodes {
-		if node.Type == config.WorkerType {
-			workerCert := NewCertRequest()
-			workerCert.CN = "system:node:" + node.IPv4AddrStr
-			workerCert.Names[0].O = "system:nodes"
-			workerCert.Names[0].OU = "Kubernetes"
-
-			fileName := node.IPv4AddrStr + "-csr.json"
-			dir = path.Join(homeDir, "/", name, "/workers/")
-			fullPath := path.Join(dir, fileName)
-			err := workerCert.WriteToFile(fullPath)
-			if err != nil {
-				return err
-			}
-			cmd := fmt.Sprintf(consts.WorkerCertGen, vars[consts.AnsibleCaConfigJson],
-				node.IPv4AddrStr, node.IPv4AddrStr, fileName, node.IPv4AddrStr)
-			err = changeAndExec(dir, cmd)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// proxy cert
-	{
-		proxyCertRequest := NewCertRequest()
-		proxyCertRequest.CN = "system:kube-proxy"
-		proxyCertRequest.Names[0].O = "system:node-proxier"
-		proxyCertRequest.Names[0].OU = "Kubernetes"
-		proxyFileName := name + ".kube-proxy-csr.json"
-		dir = path.Join(homeDir, "/", name, "/proxy/")
-		proxyCertPath := path.Join(dir, proxyFileName)
-		err := proxyCertRequest.WriteToFile(proxyCertPath)
-		if err != nil {
-			return err
-		}
-		vars[consts.AnsibleJsonProxyReq] = proxyCertPath
-		cmd := fmt.Sprintf(consts.ProxyCertGen, vars[consts.AnsibleCaConfigJson], proxyFileName)
-		err = changeAndExec(dir, cmd)
-		if err != nil {
-			return err
-		}
-	}
-
-	// api cert
-	{
-		apiCertRequest := NewCertRequest()
-		apiCertRequest.CN = "kubernetes"
-		apiCertRequest.Names[0].O = "Kubernetes"
-		apiCertRequest.Names[0].OU = "Kubernetes"
-		apiFileName := name + ".kubernetes-csr.json"
-		dir = path.Join(homeDir, "/", name, "/api/")
-		apiCertPath := path.Join(dir, apiFileName)
-		err := apiCertRequest.WriteToFile(apiCertPath)
-		if err != nil {
-			return err
-		}
-		vars[consts.AnsibleJsonApiReq] = apiCertPath
-		cmd := fmt.Sprintf(consts.ApiCertGen, vars[consts.AnsibleCaConfigJson], hostAsList(nodes), apiFileName)
-		err = changeAndExec(dir, cmd)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	// return all paths to all files
+	return &CertRespond{
+		csr,
+		privatekey,
+		cert,
+		args["config"],
+	}, nil
 }
