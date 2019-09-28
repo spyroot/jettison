@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 VMware, Inc. All Rights Reserved.
+Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,18 +26,21 @@ package dockerutils
 import (
 	"context"
 	"fmt"
+
+	"io"
+	"log"
+	"os"
+	"strconv"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"io"
-	"log"
-	"os"
 )
 
 // Function create a docker container docker in local environment.
 // Docker must be installed in a system
-func CreateNewContainer(image string, localPort string) (string, error) {
+func CreateNewContainer(image string, localPort int) (string, error) {
 
 	ctx := context.Background()
 
@@ -61,7 +64,7 @@ func CreateNewContainer(image string, localPort string) (string, error) {
 
 	hostBinding := nat.PortBinding{
 		HostIP:   "0.0.0.0",
-		HostPort: localPort,
+		HostPort: strconv.Itoa(localPort),
 	}
 	containerPort, err := nat.NewPort("tcp", "22")
 	if err != nil {
