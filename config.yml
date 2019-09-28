@@ -1,7 +1,7 @@
 nsxt:
   hostname: 172.16.254.205
   username: admin
-  password: "***REMOVED***"
+  password: "VMware1!"
   logicalSwitch: "test-segment"
   edgeCluster: "edge-cluster"                   # here either client indicate existing switch where we attach vm or indicate tz.
   overlayTransport:  "overlay-trasport-zone"    # if client indicated only overlay than jettison populate all t1
@@ -13,7 +13,7 @@ infra:
   vcenter:
     hostname: 172.16.254.203
     username: Administrator@vmwarelab.edu
-    password: "***REMOVED***"
+    password: "VMware1!"
     datacenter: "Datacenter"
   cluster:
       # allocate /24 for each pod.  Note it very simple pool manager
