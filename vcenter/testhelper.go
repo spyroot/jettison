@@ -15,7 +15,7 @@ limitations under the License.
 
 Basic helpers for unit testing.
 
-Author spyroot
+Author Mustafa Bayramov
 mbaraymov@vmware.com
 */
 package vcenter
