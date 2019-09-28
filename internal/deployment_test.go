@@ -2,19 +2,21 @@ package internal
 
 import (
 	"fmt"
-	"github.com/spyroot/jettison/config"
+	"github.com/spyroot/jettison/jettypes"
+	"github.com/spyroot/jettison/netpool"
 	"log"
 	"reflect"
 	"testing"
 )
 
-var appConfig, _ = config.ReadConfig()
+//var appConfig, _ = config.ReadConfig()
 
 func TestNewDeployment(t *testing.T) {
 	type args struct {
-		workersTemplate    *config.NodeTemplate
-		controllerTemplate *config.NodeTemplate
-		ingressTemplate    *config.NodeTemplate
+		workersTemplate    *jettypes.NodeTemplate
+		controllerTemplate *jettypes.NodeTemplate
+		ingressTemplate    *jettypes.NodeTemplate
+		name               string
 	}
 	tests := []struct {
 		name    string
@@ -24,7 +26,7 @@ func TestNewDeployment(t *testing.T) {
 	}{
 		{
 			name:    "nil constructor",
-			args:    args{nil, nil, nil},
+			args:    args{nil, nil, nil, "test"},
 			want:    nil,
 			wantErr: true,
 		},
@@ -42,7 +44,7 @@ func TestNewDeployment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewDeployment(tt.args.workersTemplate, tt.args.controllerTemplate, tt.args.ingressTemplate)
+			got, err := NewDeployment(tt.args.workersTemplate, tt.args.controllerTemplate, tt.args.ingressTemplate, tt.args.name)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewDeployment() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -54,10 +56,10 @@ func TestNewDeployment(t *testing.T) {
 	}
 }
 
-func deepCheck(d *Deployment, got *[]*config.NodeTemplate) error {
+func deepCheck(d *Deployment, got *[]*jettypes.NodeTemplate) error {
 
 	for _, v := range *got {
-		if v.Type == config.ControlType {
+		if v.Type == jettypes.ControlType {
 			res, err := d.FindController(v.Name)
 			if err != nil {
 				return fmt.Errorf("DeployTaskList() expected %v, got %v", v.Name, err)
@@ -68,7 +70,7 @@ func deepCheck(d *Deployment, got *[]*config.NodeTemplate) error {
 			}
 		}
 
-		if v.Type == config.WorkerType {
+		if v.Type == jettypes.WorkerType {
 			res, err := d.FindWorker(v.Name)
 			if err != nil {
 				return fmt.Errorf("DeployTaskList() expected %v, got %v", v.Name, err)
@@ -78,7 +80,7 @@ func deepCheck(d *Deployment, got *[]*config.NodeTemplate) error {
 			}
 		}
 
-		if v.Type == config.IngressType {
+		if v.Type == jettypes.IngressType {
 			res, err := d.FindIngress(v.Name)
 			if err != nil {
 				return fmt.Errorf("DeployTaskList() expected %v, got %v", v.Name, err)
@@ -93,10 +95,16 @@ func deepCheck(d *Deployment, got *[]*config.NodeTemplate) error {
 }
 
 func TestDeployment_DeployTaskList(t *testing.T) {
+
+	env, teardown := setupTest(t)
+	defer teardown(t)
+	jetConf := env.TestVim.GetJetConfig()
+
 	type args struct {
-		workersTemplate    *config.NodeTemplate
-		controllerTemplate *config.NodeTemplate
-		ingressTemplate    *config.NodeTemplate
+		workers    *jettypes.NodeTemplate
+		controller *jettypes.NodeTemplate
+		ingress    *jettypes.NodeTemplate
+		depname    string
 	}
 	tests := []struct {
 		name      string
@@ -108,9 +116,11 @@ func TestDeployment_DeployTaskList(t *testing.T) {
 		{
 			name: "deployment deep check",
 			args: args{
-				appConfig.GetWorkersTemplate(),
-				appConfig.GetControllersTemplate(),
-				appConfig.GetIngresTemplate()},
+				jetConf.GetWorkersTemplate(),
+				jetConf.GetControllersTemplate(),
+				jetConf.GetIngresTemplate(),
+				"test",
+			},
 			wantErr:   false,
 			wantCount: 7,
 		},
@@ -118,7 +128,9 @@ func TestDeployment_DeployTaskList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d, err := NewDeployment(tt.args.workersTemplate, tt.args.controllerTemplate, tt.args.ingressTemplate)
+			d, err := NewDeployment(tt.args.workers,
+				tt.args.controller,
+				tt.args.ingress, tt.args.depname)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DeployTaskList() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -194,10 +206,10 @@ func TestDeployment_DeployTaskList(t *testing.T) {
 
 func TestDeployment_allocateAddress(t *testing.T) {
 	type fields struct {
-		Workers      []config.NodeTemplate
-		Controllers  []config.NodeTemplate
-		Ingress      []config.NodeTemplate
-		AddressPools map[string]SimpleIpManager
+		Workers      []jettypes.NodeTemplate
+		Controllers  []jettypes.NodeTemplate
+		Ingress      []jettypes.NodeTemplate
+		AddressPools map[string]netpool.SimpleIpManager
 	}
 	type args struct {
 		poolName string
@@ -233,10 +245,10 @@ func TestDeployment_allocateAddress(t *testing.T) {
 
 func TestDeployment_buildPools(t *testing.T) {
 	type fields struct {
-		Workers      []config.NodeTemplate
-		Controllers  []config.NodeTemplate
-		Ingress      []config.NodeTemplate
-		AddressPools map[string]SimpleIpManager
+		Workers      []jettypes.NodeTemplate
+		Controllers  []jettypes.NodeTemplate
+		Ingress      []jettypes.NodeTemplate
+		AddressPools map[string]netpool.SimpleIpManager
 	}
 	type args struct {
 		wPool            string

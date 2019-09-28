@@ -1,4 +1,4 @@
-package internal
+package netpool
 
 import (
 	"fmt"
@@ -45,7 +45,6 @@ func (p *SimpleIpManager) Allocate() (string, error) {
 
  */
 func (p *SimpleIpManager) SetInUse(ipaddr string) {
-
 	for i, v := range p.pool {
 		if v.IpAddr == ipaddr && v.inuse == false {
 			p.pool[i].inuse = true

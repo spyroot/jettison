@@ -25,8 +25,9 @@ mbaraymov@vmware.com
 package sshclient
 
 import (
+	"fmt"
 	"github.com/eugenmayer/go-sshclient/sshwrapper"
-	"github.com/spyroot/jettison/config"
+	"github.com/spyroot/jettison/consts"
 	"log"
 	"os"
 	"os/exec"
@@ -34,27 +35,34 @@ import (
 	"strconv"
 )
 
-// Function execute command on remote server via ssh and output the result as return
-func RunRemoteCommand(sshenv config.SshGlobalEnvironments, host string, cmd string) (string, error) {
+type SshEnvironments interface {
+	Username() string
+	Password() string
+	PublicKey() string
+	PrivateKey() string
+	SshpassTool() string
+	SshCopyIdTool() string
+	Port() int
+}
+
+/*
+   Function execute command on remote server via ssh and output the result as return
+*/
+func RunRemoteCommand(ssh SshEnvironments, host string, cmd string) (string, error) {
 
 	homePath, err := os.UserHomeDir()
 	if err != nil {
-		log.Println("failed retrieve user home sshKeyPath ", err)
-		return "", err
+		return "", fmt.Errorf("failed retrieve user home folder %s", err)
 	}
 
-	sshKeyPath := filepath.Join(homePath, ".ssh/id_rsa")
-	log.Println("Reading key from sshKeyPath", sshKeyPath)
-
-	port, err := strconv.Atoi(sshenv.Port)
-	if err != nil {
-		return "", err
+	sshKeyPath := ssh.PrivateKey()
+	if ssh.PrivateKey() == "" {
+		sshKeyPath = filepath.Join(homePath, consts.DefaultPublicKey)
 	}
 
-	sshApi, err := sshwrapper.DefaultSshApiSetup(host, port, sshenv.Username, sshKeyPath)
+	sshApi, err := sshwrapper.DefaultSshApiSetup(host, ssh.Port(), ssh.Username(), sshKeyPath)
 	if err != nil {
-		log.Println(err)
-		log.Println("return error")
+		log.Println("ssh return error", err)
 		return "", err
 	}
 
@@ -72,21 +80,28 @@ func RunRemoteCommand(sshenv config.SshGlobalEnvironments, host string, cmd stri
 // note since since ssh-copy-id never trust stdin for initial password authentication
 // function uses sshpass to pass a password and username
 // wget https://raw.githubusercontent.com/ansible/ansible/devel/examples/ansible.cfg
-func SshCopyId(sshenv config.SshGlobalEnvironments, host string) error {
+func SshCopyId(ssh SshEnvironments, host string) error {
 
 	var (
 		sshHost string
 	)
 
-	log.Println("Copy ssh key to a host", host, " using ssh env", sshenv)
+	log.Println("Copy ssh key to a host", host, " using public key:", ssh.PublicKey())
+	//osutil.CheckIfExist(sshenv.SshpassPath())
 
-	sshHost = sshenv.Username + "@" + host
-	subProcess := exec.Command(sshenv.SshpassPath,
-		sshenv.SshpassPath, "-p", sshenv.Password, sshenv.SshCopyIdPath, "-p", sshenv.Port,
-		"-o", "StrictHostKeyChecking=no", "-i", sshenv.PublicKey, sshHost)
+	sshHost = ssh.Username() + "@" + host
+
+	//sshHost = sshenv.Username + "@" + host
+	//subProcess := exec.Command(sshenv.SshpassPath,
+	//	sshenv.SshpassPath, "-p", sshenv.Password, sshenv.SshCopyIdPath, "-p", strconv.Itoa(sshenv.Port),
+	//	"-o", "StrictHostKeyChecking=no", "-i", sshenv.PublicKey, sshHost)
+
+	subProcess := exec.Command(ssh.SshpassTool(),
+		ssh.SshpassTool(), "-p", ssh.Password(), ssh.SshCopyIdTool(), "-p", strconv.Itoa(ssh.Port()),
+		"-o", "StrictHostKeyChecking=no", "-i", ssh.PublicKey(), sshHost)
 
 	// set new env before we call ssh
-	additionalEnv := "SSHPASS=" + sshenv.Password
+	additionalEnv := "SSHPASS=" + ssh.Password()
 	newEnv := append(os.Environ(), additionalEnv)
 	subProcess.Env = newEnv
 
@@ -96,13 +111,17 @@ func SshCopyId(sshenv config.SshGlobalEnvironments, host string) error {
 		return err
 	}
 
-	defer stdin.Close()
+	defer func() {
+		if err := stdin.Close(); err != nil {
+			log.Println("failed to close stdin", err)
+		}
+	}()
 
-	subProcess.Stdout = os.Stdout
-	subProcess.Stderr = os.Stderr
+	//subProcess.Stdout = os.Stdout
+	//subProcess.Stderr = os.Stderr
 
 	if err = subProcess.Start(); err != nil {
-		log.Println("Failed swan ssh process")
+		log.Println("failed create ssh sub-process")
 		return err
 	}
 

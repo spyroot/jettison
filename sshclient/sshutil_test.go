@@ -22,17 +22,17 @@ mbaraymov@vmware.com
 package sshclient
 
 import (
-	"github.com/spyroot/jettison/config"
+	"github.com/spyroot/jettison/internal"
 	"strings"
 	"testing"
 )
 
 // read global config.
-var appConfig, _ = config.ReadConfig()
+var appConfig, _ = internal.ReadConfig()
 
 func Test_runRemoteCommand(t *testing.T) {
 	type args struct {
-		sshenv config.SshGlobalEnvironments
+		sshenv internal.SshGlobalEnvironments
 		host   string
 		cmd    string
 	}
@@ -45,7 +45,7 @@ func Test_runRemoteCommand(t *testing.T) {
 		{
 			"empty config",
 			args{
-				sshenv: config.SshGlobalEnvironments{},
+				sshenv: internal.SshGlobalEnvironments{},
 				host:   "172.16.81.1",
 				cmd:    "ls",
 			},
@@ -55,7 +55,7 @@ func Test_runRemoteCommand(t *testing.T) {
 		{
 			"valid host, wrong credentials",
 			args{
-				sshenv: config.SshGlobalEnvironments{},
+				sshenv: internal.SshGlobalEnvironments{},
 				host:   "172.16.149.222",
 				cmd:    "/bin/ls",
 			},
@@ -110,7 +110,7 @@ func Test_runRemoteCommand(t *testing.T) {
 // test ssh copy
 func Test_sshCopyid(t *testing.T) {
 	type args struct {
-		sshenv config.SshGlobalEnvironments
+		sshenv internal.SshGlobalEnvironments
 		host   string
 	}
 	tests := []struct {
@@ -122,7 +122,7 @@ func Test_sshCopyid(t *testing.T) {
 		{
 			"empty config",
 			args{
-				sshenv: config.SshGlobalEnvironments{},
+				sshenv: internal.SshGlobalEnvironments{},
 				host:   "172.16.81.1",
 			}, true,
 		},

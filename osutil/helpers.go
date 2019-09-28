@@ -21,14 +21,58 @@ mbaraymov@vmware.com
 package osutil
 
 import (
+	"github.com/spyroot/jettison/logging"
 	"log"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 )
 
 type Parser struct {
 	String string
 	pos    int64
+}
+
+/**
+  Function take dir that use used for chdir before executing cmd
+*/
+func ChangeAndExec(dir string, cmd string) error {
+
+	err := os.Chdir(dir)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return err
+	}
+
+	_, err = exec.Command("bash", "-c", cmd).Output()
+	if err != nil {
+		log.Println(" failed execute:", cmd)
+		logging.ErrorLogging(err)
+		return err
+	}
+
+	return nil
+}
+
+/**
+  Function take dir that use used for chdir before executing cmd
+*/
+func ChangeAndExecWithSdout(dir string, cmd string) (string, error) {
+
+	err := os.Chdir(dir)
+	if err != nil {
+		logging.ErrorLogging(err)
+		return "", err
+	}
+
+	s, err := exec.Command("bash", "-c", cmd).Output()
+	if err != nil {
+		log.Println(" failed execute:", cmd)
+		logging.ErrorLogging(err)
+		return "", err
+	}
+	return string(s), nil
 }
 
 // Function check write/read access
@@ -70,6 +114,17 @@ func GetEnvString(v string, def string) string {
 	}
 
 	return r
+}
+
+func UserHomeDir() string {
+	if runtime.GOOS == "windows" {
+		home := os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+		return home
+	}
+	return os.Getenv("HOME")
 }
 
 // getEnvBool returns boolean from environment variable.

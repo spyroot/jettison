@@ -13,15 +13,13 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Copy from original vmdk tool.  This version doesn't do any move operation.
-
-
+Copy from original VMDK tool.  This version doesn't do any move operation.
 
 Author Mustafa Bayramov
 mbaraymov@vmware.com
 */
 
-package testutils
+package osutil
 
 import (
 	"bytes"

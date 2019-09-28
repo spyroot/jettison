@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/spyroot/jettison/config"
-	"github.com/spyroot/jettison/logging"
 	"log"
 	"net"
+
+	"github.com/spyroot/jettison/jettypes"
+	"github.com/spyroot/jettison/logging"
 )
 
 func CreateTablesIfNeed(db *sql.DB) error {
@@ -265,6 +266,7 @@ func DeleteDeployment(db *sql.DB, projectName string) error {
 		return errors.Trace(err)
 	}
 
+	// delete all nodes from deployment
 	query := `DELETE FROM nodes WHERE id = (SELECT id FROM deployment WHERE DeploymentName = ?)`
 
 	stmt, err := db.Prepare(query)
@@ -285,6 +287,7 @@ func DeleteDeployment(db *sql.DB, projectName string) error {
 		return errors.Trace(err)
 	}
 
+	// delete all nodes from deployment
 	query = `DELETE FROM podipblock WHERE id = (SELECT id FROM deployment WHERE DeploymentName = ?)`
 
 	stmt, err = db.Prepare(query)
@@ -327,12 +330,24 @@ func DeleteDeployment(db *sql.DB, projectName string) error {
 	return nil
 }
 
+type TemplateNode interface {
+	Name() string
+	MacAddress() string
+	IPv4Address() string
+	SwitchUuid() string
+	RouterUuid() string
+	DhcpServerUuid() string
+	GetNodeType() string
+	ClusterName() string
+	VimFolder() string
+}
+
 /**
 
  */
-func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, bool, error) {
+func GetDeploymentNodes(db *sql.DB, depName string) ([]*jettypes.NodeTemplate, bool, error) {
 
-	var nodes []*config.NodeTemplate
+	var nodes []*jettypes.NodeTemplate
 
 	if db == nil {
 		return nodes, false, fmt.Errorf("database connector is nil")
@@ -359,19 +374,19 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 
 	for rows.Next() {
 		var (
-			node        = &config.NodeTemplate{}
+			node        = &jettypes.NodeTemplate{}
 			mac         = ""
 			nodeType    = ""
 			vimName     = ""
 			vimFolder   = ""
-			SwitchUuid  = ""
-			RouterUuid  = ""
-			ClusterName = ""
-			DhcpId      = ""
+			switchUuid  = ""
+			routerUuid  = ""
+			clusterName = ""
+			dhcpId      = ""
 		)
 		err = rows.Scan(&node.Name, &node.UUID, &vimName,
 			&node.IPv4AddrStr, &mac, &vimFolder,
-			&SwitchUuid, &RouterUuid, &ClusterName, &DhcpId, &nodeType)
+			&switchUuid, &routerUuid, &clusterName, &dhcpId, &nodeType)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -382,10 +397,14 @@ func GetDeploymentNodes(db *sql.DB, depName string) ([]*config.NodeTemplate, boo
 		node.IPv4Addr = net.ParseIP(node.IPv4AddrStr)
 		node.SetVimName(vimName)
 		node.SetFolderPath(vimFolder)
-		node.SetSwitchUuid(SwitchUuid)
-		node.SetRouterUuid(RouterUuid)
-		node.SetDhcpId(DhcpId)
-		node.VimCluster = ClusterName
+
+		// TODO add names
+		lrSwitch := jettypes.NewGenericSwitch("", switchUuid, dhcpId, "")
+		lrRouter := jettypes.NewGenericRouter("", routerUuid)
+
+		node.SetGenericSwitch(lrSwitch)
+		node.SetGenericRouter(lrRouter)
+		node.VimCluster = clusterName
 
 		nodes = append(nodes, node)
 	}
@@ -445,7 +464,7 @@ func GetDeployment(db *sql.DB, depName string) (int, int, bool, error) {
 /**
 
  */
-func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
+func AddNode(db *sql.DB, node *jettypes.NodeTemplate, depId int) error {
 
 	if db == nil {
 		return fmt.Errorf("database connector is nil")
@@ -501,10 +520,10 @@ func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
 		node.IPv4Addr.String(),
 		node.Mac[0],
 		node.GetFolderPath(),
-		node.GetSwitchUuid(),
-		node.GetRouterUuid(),
+		node.GenericSwitch().Uuid(),
+		node.GenericRouter().Uuid(),
 		node.VimCluster,
-		node.GetDhcpId(),
+		node.GenericSwitch().DhcpUuid(),
 		node.Type.String(),
 	)
 	if err != nil {
@@ -521,10 +540,10 @@ func AddNode(db *sql.DB, node *config.NodeTemplate, depId int) error {
 	return nil
 }
 
-func createDeployment(db *sql.DB, node *config.NodeTemplate, depName string) error {
-	var nodes []*config.NodeTemplate
+func createDeployment(db *sql.DB, node *jettypes.NodeTemplate, depName string) error {
+	var nodes []*jettypes.NodeTemplate
 	nodes = append(nodes, node)
-	return CreateDeployment(db, &nodes, depName)
+	return CreateDeployment(db, nodes, depName)
 }
 
 /**
@@ -533,13 +552,13 @@ func createDeployment(db *sql.DB, node *config.NodeTemplate, depName string) err
 
   Nodes must hold at least one node
 */
-func CreateDeployment(db *sql.DB, nodes *[]*config.NodeTemplate, depName string) error {
+func CreateDeployment(db *sql.DB, nodes []*jettypes.NodeTemplate, depName string) error {
 
 	if db == nil {
 		return fmt.Errorf("database connector is nil")
 	}
 
-	if nodes == nil || len(*nodes) == 0 {
+	if nodes == nil || len(nodes) == 0 {
 		return fmt.Errorf("node template is nil or empty")
 	}
 
@@ -605,20 +624,20 @@ func CreateDeployment(db *sql.DB, nodes *[]*config.NodeTemplate, depName string)
 		}
 	}()
 
-	for _, node := range *nodes {
+	for _, node := range nodes {
 		// insert each node to a table
 		r, err = stmt2.Exec(depId, // 1
-			node.Name,              // 2
-			node.UUID,              // 3
-			node.GetVimName(),      // 4
-			node.IPv4Addr.String(), // 5
-			node.Mac[0],            // 6
-			node.GetFolderPath(),   // 7
-			node.GetSwitchName(),   // 8
-			node.GetRouterUuid(),   // 9
-			node.VimCluster,        // 10
-			node.GetDhcpId(),       // 11
-			node.Type.String())     // 12
+			node.Name,                       // 2
+			node.UUID,                       // 3
+			node.GetVimName(),               // 4
+			node.IPv4Addr.String(),          // 5
+			node.Mac[0],                     // 6
+			node.GetFolderPath(),            // 7
+			node.GenericSwitch().Uuid(),     // 8
+			node.GenericRouter().Uuid(),     // 9
+			node.VimCluster,                 // 10
+			node.GenericSwitch().DhcpUuid(), // 11
+			node.Type.String())              // 12
 		if err != nil {
 			_ = tx.Rollback()
 			return errors.Trace(err)

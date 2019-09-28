@@ -1,4 +1,4 @@
-package config
+package jettypes
 
 import (
 	"gopkg.in/yaml.v2"
@@ -31,7 +31,7 @@ func TestGetNodeType(t *testing.T) {
 			want: IngressType,
 		},
 		{
-			name: "incorect",
+			name: "incorrect",
 			args: args{"bogus"},
 			want: Unknown,
 		},

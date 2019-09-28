@@ -24,17 +24,27 @@ package certsutil
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/spyroot/jettison/logging"
-	"github.com/spyroot/jettison/osutil"
+
 	"log"
 	"os"
 	"path"
 	"strings"
+
+	"github.com/spyroot/jettison/jettypes"
+	"github.com/spyroot/jettison/logging"
+	"github.com/spyroot/jettison/osutil"
 )
 
+/*
+  Interface that client need implement in order cert gen be able generate certificates
+*/
 type CertClient interface {
+	// ip address of host bounded to a cert
 	GetIpAddress() string
+	// hostname of host bounded to a cert
 	GetHostname() string
+	// a host type
+	GetNodeType() jettypes.NodeType
 }
 
 type CertificateFileRespond interface {
@@ -290,7 +300,7 @@ func InitCa(certReq *CertRequest, dir string) (CertificateFileRespond, error) {
 /**
 
  */
-func MakeCert(certReq *CertRequest, args map[string]string, dir string) (*CertRespond, error) {
+func MakeCert(args map[string]string, dir string) (*CertRespond, error) {
 
 	// check all mandatory fields
 	for _, field := range certRequestFields {

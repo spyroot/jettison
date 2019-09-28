@@ -19,14 +19,16 @@ Author Mustafa Bayramov
 mbaraymov@vmware.com
 */
 
-package tests
+package vcenter
 
 import (
 	"context"
+	"fmt"
 	"github.com/spyroot/jettison/internal"
-	"github.com/spyroot/jettison/testutils"
-	"github.com/spyroot/jettison/vcenter"
+	"github.com/spyroot/jettison/logging"
+	"github.com/stretchr/testify/assert"
 	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"log"
@@ -34,38 +36,14 @@ import (
 	"testing"
 )
 
-var (
-	TestVim       *internal.Vim
-	TestImageName = ""
-	TestVmUuid    = ""
-)
+//var (
+//	TestVim       *internal.Vim
+//	TestImageName = ""
+//	TestVmUuid    = ""
+//)
 
-/**
-     main test setup routine
-     create vm in target cluster
-	 in case cluster / vm name needs to be change change variable in testutil package
-*/
-func setupTestCase(t *testing.T) func(t *testing.T) {
-	v, err := internal.InitEnvironment()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	TestVim = v
-
-	uuid, err := testutils.CreateVmifneeded(v.Ctx, v.GetVimClient())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	TestImageName = testutils.TestImageName
-	TestVmUuid = uuid
-
-	return func(t *testing.T) {
-		//		t.Log("teardown test case")
-	}
-}
-
+//
+//
 func setupSubTest(t *testing.T) func(t *testing.T) {
 	t.Log("setup sub test")
 	return func(t *testing.T) {
@@ -73,7 +51,56 @@ func setupSubTest(t *testing.T) func(t *testing.T) {
 	}
 }
 
+func TestDeleteFolder(t *testing.T) {
+
+	client, ctx, teardown := setupTest(t)
+	_ = teardown
+
+	folder, err := find.NewFinder(client.Client).DefaultFolder(ctx)
+	assert.Nil(t, err)
+	assert.NotNil(t, folder)
+
+	folder.CreateFolder(ctx, "jettest")
+
+	type args struct {
+		ctx        context.Context
+		c          *vim25.Client
+		folderName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			"Folder test",
+			args{
+				ctx:        ctx,
+				c:          client.Client,
+				folderName: "jettest",
+			},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			err := DeleteFolder(tt.args.ctx, tt.args.c, tt.args.folderName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DeleteFolder() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
+/**
+
+ */
 func TestChangePowerState(t *testing.T) {
+
+	env, c := VimSetupHelper()
+
 	type args struct {
 		ctx  context.Context
 		c    *vim25.Client
@@ -89,7 +116,7 @@ func TestChangePowerState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.ChangePowerState(tt.args.ctx, tt.args.c, tt.args.uuid)
+			got, err := ChangePowerState(tt.args.ctx, tt.args.c, tt.args.uuid)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ChangePowerState() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -102,6 +129,9 @@ func TestChangePowerState(t *testing.T) {
 }
 
 func TestConnect(t *testing.T) {
+
+	env, c := VimSetupHelper()
+
 	type args struct {
 		ctx      context.Context
 		hostname string
@@ -118,7 +148,7 @@ func TestConnect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.Connect(tt.args.ctx, tt.args.hostname, tt.args.username, tt.args.password)
+			got, err := Connect(tt.args.ctx, tt.args.hostname, tt.args.username, tt.args.password)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Connect() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -131,6 +161,9 @@ func TestConnect(t *testing.T) {
 }
 
 func TestGetNetworkAttr(t *testing.T) {
+
+	env, c := VimSetupHelper()
+
 	type args struct {
 		ctx       context.Context
 		c         *vim25.Client
@@ -146,7 +179,7 @@ func TestGetNetworkAttr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.GetNetworkAttr(tt.args.ctx, tt.args.c, tt.args.vmVimName)
+			got, err := GetNetworkAttr(tt.args.ctx, tt.args.c, tt.args.vmVimName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetNetworkAttr() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -159,8 +192,8 @@ func TestGetNetworkAttr(t *testing.T) {
 }
 
 func TestGetSwitchUuid(t *testing.T) {
-	teardownTestCase := setupTestCase(t)
-	defer teardownTestCase(t)
+
+	env, c := VimSetupHelper()
 
 	type args struct {
 		ctx        context.Context
@@ -184,7 +217,7 @@ func TestGetSwitchUuid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.GetSwitchUuid(tt.args.ctx, tt.args.c, tt.args.switchName)
+			got, err := GetSwitchUuid(tt.args.ctx, tt.args.c, tt.args.switchName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetSwitchUuid() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -201,8 +234,8 @@ func TestGetSwitchUuid(t *testing.T) {
 }
 
 func TestGetNetworks(t *testing.T) {
-	teardownTestCase := setupTestCase(t)
-	defer teardownTestCase(t)
+
+	env, c := VimSetupHelper()
 
 	type args struct {
 		ctx  context.Context
@@ -228,7 +261,7 @@ func TestGetNetworks(t *testing.T) {
 		{
 			name: "wrong name",
 			args: args{
-				ctx:  TestVim.Ctx,
+				ctx:  env.ctx,
 				c:    TestVim.GetVimClient(),
 				uuid: TestVmUuid,
 			},
@@ -238,7 +271,7 @@ func TestGetNetworks(t *testing.T) {
 		{
 			name: "correct name",
 			args: args{
-				ctx:  TestVim.Ctx,
+				ctx:  env.ctx,
 				c:    TestVim.GetVimClient(),
 				uuid: "test-segment",
 			},
@@ -248,7 +281,7 @@ func TestGetNetworks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.GetNetworks(tt.args.ctx, tt.args.c, tt.args.uuid)
+			got, err := GetNetworks(tt.args.ctx, tt.args.c, tt.args.uuid)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetNetworks() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -264,8 +297,7 @@ func TestGetNetworks(t *testing.T) {
 
 func TestGetSummaryVm(t *testing.T) {
 
-	teardownTestCase := setupTestCase(t)
-	defer teardownTestCase(t)
+	env, c := VimSetupHelper()
 
 	type args struct {
 		ctx  context.Context
@@ -283,7 +315,7 @@ func TestGetSummaryVm(t *testing.T) {
 			name: "nil test1",
 			args: args{
 				ctx:  nil,
-				c:    TestVim.GetVimClient(),
+				c:    c.Client,
 				name: "edge01.vmwarelab.edu",
 			},
 			wantErr: true,
@@ -292,7 +324,7 @@ func TestGetSummaryVm(t *testing.T) {
 		{
 			name: "nil test2",
 			args: args{
-				ctx:  TestVim.Ctx,
+				ctx:  env.ctx,
 				c:    nil,
 				name: "edge01.vmwarelab.edu",
 			},
@@ -302,8 +334,8 @@ func TestGetSummaryVm(t *testing.T) {
 		{
 			name: "wrong name",
 			args: args{
-				ctx:  TestVim.Ctx,
-				c:    TestVim.GetVimClient(),
+				ctx:  env.ctx,
+				c:    c.Client,
 				name: "edge01.vmwarelab.edu",
 			},
 			wantErr: true,
@@ -312,8 +344,8 @@ func TestGetSummaryVm(t *testing.T) {
 		{
 			name: "Correct name",
 			args: args{
-				ctx:  TestVim.Ctx,
-				c:    TestVim.GetVimClient(),
+				ctx:  env.ctx,
+				c:    c.Client,
 				name: TestVmUuid,
 			},
 			wantErr: false,
@@ -322,7 +354,7 @@ func TestGetSummaryVm(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.GetSummaryVm(tt.args.ctx, tt.args.c, tt.args.name)
+			got, err := GetSummaryVm(tt.args.ctx, tt.args.c, tt.args.name)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetVM() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -338,18 +370,19 @@ func TestGetSummaryVm(t *testing.T) {
 	}
 }
 
+//
+//  gett vm attributes test
 func TestGetVmAttr(t *testing.T) {
 
-	cmpName := vcenter.VmLookupMap["name"]
-	cmpUuid := vcenter.VmLookupMap["uuid"]
+	env, c := VimSetupHelper()
 
-	teardownTestCase := setupTestCase(t)
-	defer teardownTestCase(t)
+	cmpName := VmSearchHandler["name"]
+	cmpUuid := VmSearchHandler["uuid"]
 
 	type args struct {
 		ctx          context.Context
 		c            *vim25.Client
-		vmComparator vcenter.VmComparator
+		vmComparator VmComparator
 		attrValue    string
 	}
 	tests := []struct {
@@ -359,8 +392,8 @@ func TestGetVmAttr(t *testing.T) {
 	}{
 		{
 			name: "nil callback",
-			args: args{ctx: TestVim.Ctx,
-				c:            TestVim.GetVimClient(),
+			args: args{ctx: env.ctx,
+				c:            c.Client,
 				vmComparator: nil,
 				attrValue:    TestImageName,
 			},
@@ -368,8 +401,8 @@ func TestGetVmAttr(t *testing.T) {
 		},
 		{
 			name: "lookup by name",
-			args: args{ctx: TestVim.Ctx,
-				c:            TestVim.GetVimClient(),
+			args: args{ctx: env.ctx,
+				c:            c.Client,
 				vmComparator: cmpName,
 				attrValue:    TestImageName,
 			},
@@ -377,8 +410,8 @@ func TestGetVmAttr(t *testing.T) {
 		},
 		{
 			name: "lookup by vm uuid",
-			args: args{ctx: TestVim.Ctx,
-				c:            TestVim.GetVimClient(),
+			args: args{ctx: env.ctx,
+				c:            c.Client,
 				vmComparator: cmpUuid,
 				attrValue:    TestVmUuid,
 			},
@@ -387,7 +420,7 @@ func TestGetVmAttr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := vcenter.GetVmAttr(tt.args.ctx, tt.args.c, tt.args.vmComparator, tt.args.attrValue)
+			got, err := GetVmAttr(tt.args.ctx, tt.args.c, tt.args.vmComparator, tt.args.attrValue)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetVmAttr() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -405,8 +438,8 @@ func TestGetVmAttr(t *testing.T) {
 
 func TestVmFromCluster(t *testing.T) {
 
-	teardownTestCase := setupTestCase(t)
-	defer teardownTestCase(t)
+	client, ctx, teardown := setupTest(t)
+	_ = teardown
 
 	type args struct {
 		ctx         context.Context
@@ -422,17 +455,17 @@ func TestVmFromCluster(t *testing.T) {
 	}{
 		{
 			"get vm",
-			args{TestVim.Ctx,
-				TestVim.GetVimClient(),
+			args{ctx,
+				client.Client,
 				TestImageName,
-				testutils.TestImageCluster,
+				"mgmt",
 			},
 			false,
 		},
 		{
 			"empty names",
-			args{TestVim.Ctx,
-				TestVim.GetVimClient(),
+			args{ctx,
+				client.Client,
 				"", "",
 			},
 			true,
@@ -440,7 +473,7 @@ func TestVmFromCluster(t *testing.T) {
 
 		{
 			"nil client",
-			args{TestVim.Ctx,
+			args{ctx,
 				nil,
 				"",
 				"",
@@ -451,12 +484,48 @@ func TestVmFromCluster(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, vm, err := vcenter.VmFromCluster(tt.args.ctx, tt.args.c, tt.args.vmName, tt.args.clusterName)
+			_, _, vm, err := VmFromCluster(tt.args.ctx, tt.args.c, tt.args.vmName, tt.args.clusterName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("VmFromCluster() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			log.Println(vm)
+		})
+	}
+}
+
+func TestGetOpaqueNetwork(t *testing.T) {
+
+	env, c := VimSetupHelper()
+
+	type args struct {
+		ctx        context.Context
+		c          *vim25.Client
+		folderName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			"Folder test",
+			args{
+				ctx:        env.ctx,
+				c:          c.Client,
+				folderName: "Test-61eb201c-420f-4c5a-b5f0-4f1dada5a015",
+			},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			_, err := GetOpaqueNetworks(tt.args.ctx, tt.args.c)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DeleteFolder() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 		})
 	}
 }

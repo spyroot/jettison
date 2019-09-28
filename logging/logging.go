@@ -16,6 +16,15 @@ func CriticalMessage(msg ...string) {
 }
 
 /**
+  Output critical message to console in red
+*/
+func Notification(msg ...string) {
+	color.Set(color.FgBlue)
+	log.Println(msg)
+	color.Unset()
+}
+
+/**
   Used to print additional meta information about error.
   function name and line.
 */

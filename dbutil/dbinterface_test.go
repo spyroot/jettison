@@ -2,7 +2,8 @@ package dbutil
 
 import (
 	"database/sql"
-	"github.com/spyroot/jettison/config"
+	"github.com/spyroot/jettison/jettypes"
+	"github.com/spyroot/jettison/vcenter"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"testing"
@@ -33,7 +34,7 @@ func TestCreateDatabase(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    " create database",
+			name:    "Create database",
 			wantErr: false,
 		},
 	}
@@ -51,50 +52,6 @@ func TestCreateDatabase(t *testing.T) {
 	}
 }
 
-//
-//func createSyntheticValidNode() *config.NodeTemplate {
-//
-//	var node0 = config.NodeTemplate{}
-//	node0.Name=uuid.New().String()
-//	node0.DesiredAddress = "172.16.81.0/24"
-//	node0.IPv4Addr = net.ParseIP("172.16.81.1")
-//	node0.IPv4Addr = net.ParseIP("172.16.81.1")
-//	node0.VimCluster = uuid.New().String()
-//	node0.VmTemplateName =  uuid.New().String()
-//	node0.Mac = append(node0.Mac,  "abcd:abcd:abc")
-//	node0.VimName = uuid.New().String()
-//	node0.LogicalSwitchRef = "test-lds"
-//	node0.Type = config.ControlType
-//
-//	return &node0
-//}
-
-//
-//type NodeTemplate struct {
-//	Name				string
-//	Prefix         		string `yaml:"prefix"`
-//	DomainSuffix   		string `yaml:"domainSuffix"`
-//	DesiredCount   		int    `yaml:"desiredCount"`
-//	DesiredAddress 		string `yaml:"desiredAddress"`
-//	IPv4AddrStr			string `yaml:"IPv4address"`
-//	IPv4Addr			net.IP
-//	IPv4Net             *net.IPNet
-//	Gateway     		string `yaml:"gateway"`
-//	VmTemplateName 		string `yaml:"vmTemplateName"`
-//	UUID           		string `yaml:"uuid"`
-//	VimCluster     		string `yaml:"clusterName"`
-//	NetworksRef    		[]string
-//	Mac            		[]string
-//	VimName        		string
-//	LogicalSwitchRef	string	`yaml:"logicalSwitch"`
-//	LogicalRouterRef 	string
-//	Type				NodeType
-//	VimState			Status
-//	DhcpStatus     		Status
-//	NetworkStatus	 	Status
-//	AnsibleStatus		Status
-//}
-
 func TestCreateDeployment(t *testing.T) {
 
 	teardownTestCase := setupTestCase(t)
@@ -102,11 +59,11 @@ func TestCreateDeployment(t *testing.T) {
 
 	type args struct {
 		db      *sql.DB
-		node    *[]*config.NodeTemplate
+		node    *[]*jettypes.NodeTemplate
 		depName string
 	}
 
-	testNode01 := CreateSyntheticValidNodes(t, 1)
+	testNode01 := vcenter.CreateSyntheticValidNodes(t, 1)
 
 	args01 := args{nil, testNode01, "test"}
 	args02 := args{DB, nil, "test"}
@@ -163,8 +120,13 @@ func TestCreateDeployment(t *testing.T) {
 						assert.Equal(t, n.GetVimName(), argNodes[0].GetVimName(), "vim name mismatch")
 						assert.Equal(t, n.GetFolderPath(), argNodes[0].GetFolderPath(), "folder mismatch")
 						//assert.Equal(t, n.GetSwitchUuid(), argNodes[0].GetSwitchUuid(), "switch mismatch")
-						assert.Equal(t, n.GetDhcpId(), argNodes[0].GetDhcpId(), "dhcp id mismatch")
-						assert.Equal(t, n.GetRouterUuid(), argNodes[0].GetRouterUuid(), "router uuid mismatch")
+
+						assert.Equal(t, n.GenericSwitch().DhcpUuid(),
+							argNodes[0].GenericSwitch().DhcpUuid(), "dhcp id mismatch")
+
+						assert.Equal(t, n.GenericRouter().Uuid(),
+							argNodes[0].GenericRouter().Uuid(), "router uuid mismatch")
+
 						assert.Equal(t, n.VimCluster, argNodes[0].VimCluster, "cluster name mismatch")
 						assert.Equal(t, n.Type, argNodes[0].Type, "type mismatch")
 					}
@@ -217,7 +179,7 @@ func TestDeleteDeployment(t *testing.T) {
 
 	type args struct {
 		db      *sql.DB
-		node    *config.NodeTemplate
+		node    *jettypes.NodeTemplate
 		depName string
 	}
 	tests := []struct {
@@ -264,7 +226,7 @@ func Test_deleteNodes(t *testing.T) {
 	teardownTestCase := setupTestCase(t)
 	defer teardownTestCase(t)
 
-	testNode01 := CreateSyntheticValidNodes(t, 1)
+	testNode01 := vcenter.CreateSyntheticValidNodes(t, 1)
 
 	type args struct {
 		db      *sql.DB
@@ -308,6 +270,164 @@ func Test_deleteNodes(t *testing.T) {
 				if (ok && AfterDelete == 0) != tt.wantErr {
 					t.Errorf("Test_deleteNodes() error = %v, wantErr %v", err, tt.wantErr)
 				}
+			}
+		})
+	}
+}
+
+func Test_InsertAllocation(t *testing.T) {
+
+	teardownTestCase := setupTestCase(t)
+	defer teardownTestCase(t)
+
+	type args struct {
+		db          *sql.DB
+		node        *jettypes.NodeTemplate
+		projectName string
+		ipblock     string
+		cidr        string
+	}
+
+	testNodes := vcenter.CreateSyntheticValidNodes(t, 1)
+
+	bogus01 := args{nil, (*testNodes)[0], "unit-test", "", ""}
+	bogus02 := args{DB, nil, "unit-test", "", ""}
+	bogus03 := args{DB, (*testNodes)[0], "", "", ""}
+	invalid01 := args{DB, (*testNodes)[0], "unit-test", "", ""}
+
+	// invalid ip valid cidr
+	invalid02 := args{DB,
+		(*testNodes)[0],
+		"unit-test",
+		"abcd",
+		"172.16.0.0/16"}
+
+	// valid ip invalid cidr
+	invalid03 := args{DB,
+		(*testNodes)[0],
+		"unit-test",
+		"172.16.1.0/24", "abcd"}
+
+	// valid ip invalid cidr
+	valid01 := args{DB, (*testNodes)[0],
+		"unit-test",
+		"172.16.1.0/24",
+		"172.16.1.0/16"}
+
+	//
+	//duplicate := args{DB, testNode01, "unit-test", "", ""}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name:    "nil db",
+			args:    bogus01,
+			wantErr: true,
+		},
+		{
+			name:    "nil node struct",
+			args:    bogus02,
+			wantErr: true,
+		},
+		{
+			name:    "empty name",
+			args:    bogus03,
+			wantErr: true,
+		},
+		{
+			name:    "empty cidr",
+			args:    invalid01,
+			wantErr: true,
+		},
+		{
+			name:    "empty cidr",
+			args:    invalid01,
+			wantErr: true,
+		},
+		{
+			name:    "invalid ip block",
+			args:    invalid02,
+			wantErr: true,
+		},
+		{
+			name:    "invalid cidr block",
+			args:    invalid03,
+			wantErr: true,
+		},
+		{
+			name:    "valid record block",
+			args:    valid01,
+			wantErr: false,
+		},
+	}
+	createErr := CreateDeployment(DB, testNodes, "unit-test")
+	if createErr != nil {
+		log.Fatal("This is baseline test error ", createErr)
+	}
+
+	defer DeleteDeployment(DB, "unit-test")
+
+	for _, tt := range tests {
+
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := MakeAllocation(tt.args.db,
+				tt.args.node, tt.args.projectName,
+				tt.args.cidr, tt.args.ipblock); (err != nil) != tt.wantErr {
+				t.Errorf("TestAllocation() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_GetSubnetAllocation(t *testing.T) {
+
+	teardownTestCase := setupTestCase(t)
+	defer teardownTestCase(t)
+
+	type args struct {
+		db          *sql.DB
+		node        *jettypes.NodeTemplate
+		projectName string
+		ipblock     string
+		cidr        string
+	}
+
+	testNodes := vcenter.CreateSyntheticValidNodes(t, 1)
+	// valid ip invalid cidr
+	valid01 := args{DB,
+		(*testNodes)[0],
+		"unit-test",
+		"172.16.1.0/24",
+		"172.16.1.0/16"}
+
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name:    "valid record block",
+			args:    valid01,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+
+		t.Run(tt.name, func(t *testing.T) {
+
+			if _, err := MakeAllocation(tt.args.db,
+				tt.args.node, tt.args.projectName,
+				tt.args.cidr, tt.args.ipblock); (err != nil) != tt.wantErr {
+				t.Errorf("TestAllocation() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			ret, _, _ := GetSubnetAllocation(tt.args.db)
+			t.Log(len(ret))
+			for _, v := range ret {
+				t.Log(v.GetAllocation(), " from cidr ", v.GetCidr())
 			}
 		})
 	}

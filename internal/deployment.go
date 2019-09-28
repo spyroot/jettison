@@ -2,20 +2,14 @@ package internal
 
 import (
 	"fmt"
-	"github.com/spyroot/jettison/config"
-	"github.com/vmware/govmomi/vim25/types"
+	"github.com/spyroot/jettison/jettypes"
+	"github.com/spyroot/jettison/netpool"
 	"log"
 	"net"
 )
 
-type TaskMessage struct {
-	VmName string
-	Status types.TaskInfoState
-	Err    error
-}
-
 type DeployTaskList struct {
-	TaskList *[]config.NodeTemplate
+	TaskList *[]jettypes.NodeTemplate
 }
 
 /*
@@ -30,23 +24,23 @@ type Deployment struct {
 	ClusterName string
 
 	// list of workers node
-	Workers []config.NodeTemplate
+	Workers []jettypes.NodeTemplate
 
 	// list of ingress controllers
-	Ingress []config.NodeTemplate
+	Ingress []jettypes.NodeTemplate
 
 	// list of controller nodes
-	Controllers []config.NodeTemplate
+	Controllers []jettypes.NodeTemplate
 
-	AddressPools map[string]SimpleIpManager
+	AddressPools map[string]netpool.SimpleIpManager
 }
 
 /**
 
  */
-func (d *Deployment) DeployTaskList() (*[]*config.NodeTemplate, error) {
+func (d *Deployment) DeployTaskList() (*[]*jettypes.NodeTemplate, error) {
 
-	tmpSlice := make([]*config.NodeTemplate, 0)
+	tmpSlice := make([]*jettypes.NodeTemplate, 0)
 
 	if len(d.Controllers) < 1 {
 		return nil, fmt.Errorf("less than minimum number of controllers")
@@ -75,7 +69,7 @@ func (d *Deployment) DeployTaskList() (*[]*config.NodeTemplate, error) {
 	return &tmpSlice, nil
 }
 
-func (d *Deployment) FindController(name string) (*config.NodeTemplate, error) {
+func (d *Deployment) FindController(name string) (*jettypes.NodeTemplate, error) {
 
 	for _, v := range d.Controllers {
 		if v.Name == name {
@@ -85,7 +79,7 @@ func (d *Deployment) FindController(name string) (*config.NodeTemplate, error) {
 	return nil, fmt.Errorf("controller node not found")
 }
 
-func (d *Deployment) FindWorker(name string) (*config.NodeTemplate, error) {
+func (d *Deployment) FindWorker(name string) (*jettypes.NodeTemplate, error) {
 
 	for _, v := range d.Workers {
 		if v.Name == name {
@@ -95,7 +89,7 @@ func (d *Deployment) FindWorker(name string) (*config.NodeTemplate, error) {
 	return nil, fmt.Errorf("workers node not found")
 }
 
-func (d *Deployment) FindIngress(name string) (*config.NodeTemplate, error) {
+func (d *Deployment) FindIngress(name string) (*jettypes.NodeTemplate, error) {
 
 	for _, v := range d.Ingress {
 		if v.Name == name {
@@ -106,8 +100,10 @@ func (d *Deployment) FindIngress(name string) (*config.NodeTemplate, error) {
 }
 
 func (d *Deployment) NumberOfNodes() int {
-	// todo do check for null
-	return len(d.ClusterName) + len(d.Workers) + len(d.Ingress)
+	if d != nil {
+		return len(d.ClusterName) + len(d.Workers) + len(d.Ingress)
+	}
+	return 0
 }
 
 func (d *Deployment) allocateAddress(poolName string) (string, error) {
@@ -131,7 +127,7 @@ func (d *Deployment) buildPools(wPool string, worksSubnet string,
 
 	_, ok := d.AddressPools[worksSubnet]
 	if !ok {
-		newPool, err := NewPool(wPool)
+		newPool, err := netpool.NewPool(wPool)
 		if err != nil {
 			return err
 		}
@@ -141,7 +137,7 @@ func (d *Deployment) buildPools(wPool string, worksSubnet string,
 
 	_, ok = d.AddressPools[controllerSubnet]
 	if !ok {
-		controllersPool, err := NewPool(cPool)
+		controllersPool, err := netpool.NewPool(cPool)
 		if err != nil {
 			return err
 		}
@@ -151,7 +147,7 @@ func (d *Deployment) buildPools(wPool string, worksSubnet string,
 
 	_, ok = d.AddressPools[ingressSubnet]
 	if !ok {
-		ingressPool, err := NewPool(p)
+		ingressPool, err := netpool.NewPool(p)
 		if err != nil {
 			return err
 		}
@@ -165,8 +161,8 @@ func (d *Deployment) buildPools(wPool string, worksSubnet string,
 /**
   Function create new ip pool manager
 */
-func NewDeployment(workersTemplate *config.NodeTemplate, controllerTemplate *config.NodeTemplate,
-	ingressTemplate *config.NodeTemplate, depName string) (*Deployment, error) {
+func NewDeployment(workersTemplate *jettypes.NodeTemplate, controllerTemplate *jettypes.NodeTemplate,
+	ingressTemplate *jettypes.NodeTemplate, depName string) (*Deployment, error) {
 
 	if workersTemplate == nil || controllerTemplate == nil || ingressTemplate == nil || depName == "" {
 		return nil, fmt.Errorf("nil argument")
@@ -175,7 +171,7 @@ func NewDeployment(workersTemplate *config.NodeTemplate, controllerTemplate *con
 	var d Deployment
 	d.DeploymentName = depName
 
-	d.AddressPools = make(map[string]SimpleIpManager)
+	d.AddressPools = make(map[string]netpool.SimpleIpManager)
 	err := d.buildPools(workersTemplate.DesiredAddress, workersTemplate.IPv4Net.String(),
 		controllerTemplate.DesiredAddress, controllerTemplate.IPv4Net.String(),
 		ingressTemplate.DesiredAddress, ingressTemplate.IPv4Net.String())
@@ -194,7 +190,7 @@ func NewDeployment(workersTemplate *config.NodeTemplate, controllerTemplate *con
 
 	newNode.IPv4Addr = ingressTemplate.IPv4Addr
 	newNode.IPv4AddrStr = ingressTemplate.IPv4Addr.String()
-	newNode.Type = config.IngressType
+	newNode.Type = jettypes.IngressType
 
 	d.Ingress = append(d.Ingress, *newNode)
 
@@ -203,14 +199,13 @@ func NewDeployment(workersTemplate *config.NodeTemplate, controllerTemplate *con
 		newNode := controllerTemplate.Clone()
 		newNode.GenerateName()
 		ipAddr, err := d.allocateAddress(controllerTemplate.IPv4Net.String())
-
 		// allocate address
 		if err != nil {
 			return nil, fmt.Errorf("failed allocate address for controller")
 		}
 		newNode.IPv4Addr = net.ParseIP(ipAddr)
 		newNode.IPv4AddrStr = ipAddr
-		newNode.Type = config.ControlType
+		newNode.Type = jettypes.ControlType
 
 		// add to a list
 		d.Controllers = append(d.Controllers, *newNode)
@@ -230,10 +225,32 @@ func NewDeployment(workersTemplate *config.NodeTemplate, controllerTemplate *con
 		}
 		newNode.IPv4Addr = net.ParseIP(ipAddr)
 		newNode.IPv4AddrStr = ipAddr
-		newNode.Type = config.WorkerType
+		newNode.Type = jettypes.WorkerType
 		// add to a list
 		d.Workers = append(d.Workers, *newNode)
 	}
 
 	return &d, nil
+}
+
+/**
+  Function is debug routine
+*/
+func DebugDeployment(dep *Deployment) {
+
+	allNodes, err := dep.DeployTaskList()
+	if err == nil {
+		for _, v := range *allNodes {
+			v.PrintAsJson()
+		}
+	}
+}
+
+/**
+
+ */
+func DebugNodes(allNodes *[]*jettypes.NodeTemplate) {
+	for _, v := range *allNodes {
+		v.PrintAsJson()
+	}
 }

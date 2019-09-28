@@ -18,10 +18,11 @@ Basic helpers for unit testing.
 Author Mustafa Bayramov
 mbaraymov@vmware.com
 */
-package testutils
+package vcenter
 
 import (
 	"context"
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -29,6 +30,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	"log"
+	"os"
 )
 
 type Helper struct {
@@ -37,6 +39,64 @@ type Helper struct {
 	fns []func()
 }
 
+type MinVimConfig struct{}
+
+func (v *MinVimConfig) Endpoint() string {
+	return "172.16.254.203"
+}
+
+func (v *MinVimConfig) VimUsername() string {
+	return "Administrator@vmwarelab.edu"
+}
+func (v *MinVimConfig) VimPassword() string {
+	return "***REMOVED***"
+}
+
+func (v *MinVimConfig) Datacenter() string {
+	return "Datacenter"
+}
+
+type TestingEnv struct {
+	ctx           context.Context
+	TestImageName string
+	TestImageId   string
+}
+
+func connect() (*govmomi.Client, context.Context) {
+
+	ctx := context.Background()
+	vsphereClient, err := Connect(ctx,
+		os.Getenv("VCENTER_HOSTNAME"),
+		os.Getenv("VCENTER_USERNAME"),
+		os.Getenv("VCENTER_PASSWORD"))
+
+	if err != nil {
+		log.Fatal("Failed VimSetupHelper()", err)
+	}
+
+	return vsphereClient, ctx
+}
+
+/**
+  Unit test helper init environment, open up all required connection
+  Create single test image in vcenter for a unit tests.
+*/
+func VimSetupHelper() (*TestingEnv, *govmomi.Client) {
+
+	client, ctx := connect()
+
+	// create test vm
+	uuid, err := CreateVmifneeded(ctx, client.Client)
+	if err != nil {
+		log.Fatal("Failed deploy VM for test")
+	}
+
+	return &TestingEnv{ctx, TestImageName, uuid}, client
+}
+
+/*
+   Testing Helper
+*/
 func NewHelper(client *vim25.Client) *Helper {
 
 	h := &Helper{

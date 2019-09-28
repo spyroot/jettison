@@ -24,9 +24,11 @@ package certsutil
 import (
 	"fmt"
 	"github.com/spyroot/jettison/consts"
-	"github.com/spyroot/jettison/internal"
+	"github.com/spyroot/jettison/jettypes"
 	"github.com/spyroot/jettison/logging"
+	"github.com/spyroot/jettison/netpool"
 	"github.com/spyroot/jettison/osutil"
+	"github.com/spyroot/jettison/system"
 	"log"
 	"net"
 	"path"
@@ -102,7 +104,8 @@ func hostAsList(certClient []CertClient) string {
 	for _, v := range additionalHost {
 		list = append(list, v)
 	}
-	// return comma as  comma list
+
+	// return comma as comma separated list for cfssl tools
 	return strings.Join(list[:], ",")
 }
 
@@ -167,11 +170,11 @@ func MakeCaCertificateReq(certClient *CertRequest) (CertificateFileRespond, erro
 
 func lookupCNBinding(role string) string {
 
-	if role == "proxy" {
+	if role == "kube-proxy" {
 		return "system:kube-proxy"
 	} else if role == "admin" {
 		return "admin"
-	} else if role == "api" {
+	} else if role == "kubernetes" {
 		return "kubernetes"
 	} else if role == "controller" {
 		return "system:kube-controller-manager"
@@ -189,9 +192,9 @@ func lookupRole(role string) string {
 		return "system:masters"
 	} else if role == "worker" {
 		return "system:nodes"
-	} else if role == "proxy" {
+	} else if role == "kube-proxy" {
 		return "system:node-proxier"
-	} else if role == "api" {
+	} else if role == "kubernetes" {
 		return "Kubernetes"
 	} else if role == "controler" {
 		return "system:kube-controller-manager"
@@ -239,7 +242,7 @@ func MakeKubeCertificateReq(certClient *CertRequest,
 		req["hostname"] = hostnames
 	}
 
-	certResp, err := MakeCert(certClient, req, dir)
+	certResp, err := MakeCert(req, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +254,7 @@ func MakeKubeCertificateReq(certClient *CertRequest,
   Generate kubernetes admin certs
 */
 func MakeNodeCertificateReq(certClient *CertRequest,
-	caCert, caKey, caConfig, hostname, hostnames string) (CertificateFileRespond, error) {
+	caCert, caKey, caConfig, hostname, hostnames, ipaddr string) (CertificateFileRespond, error) {
 
 	certRequest := NewCertRequest()
 	certRequest.CN = DefaultNodeRol + hostname
@@ -275,11 +278,11 @@ func MakeNodeCertificateReq(certClient *CertRequest,
 		"config":    caConfig,
 		"profile":   "kubernetes",
 		"jsonfile":  jsonFile,
-		"bare":      hostname,
+		"bare":      ipaddr,
 		"hostname":  hostnames,
 	}
 
-	certResp, err := MakeCert(certClient, req, dir)
+	certResp, err := MakeCert(req, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -315,15 +318,15 @@ func GenerateTenantCerts(certClient []CertClient, path, tenant, serviceCidr stri
 		return nil, fmt.Errorf("invalid path or tenant name")
 	}
 
-	cfsslLoc, err := internal.GetExecLocation("cfssl")
+	cfsslLoc, err := system.GetExecLocation("cfssl")
 	if err != nil {
 		return nil, err
 	}
-	cfssljsonLoc, err = internal.GetExecLocation("cfssljson")
+	cfssljsonLoc, err = system.GetExecLocation("cfssljson")
 	if err != nil {
 		return nil, err
 	}
-	openssl, err = internal.GetExecLocation("openssl")
+	openssl, err = system.GetExecLocation("openssl")
 	if err != nil {
 		return nil, err
 	}
@@ -363,28 +366,32 @@ func GenerateTenantCerts(certClient []CertClient, path, tenant, serviceCidr stri
 
 	// workers nodes
 	for _, v := range certClient {
-		if ok, err := verify(openssl, cacert, caResp.getCertificate()); ok && err == nil {
-			log.Println("Generated certificates for worker node", v.GetHostname(), ": verified")
+		if v.GetNodeType() == jettypes.WorkerType {
+			if ok, err := verify(openssl, cacert, caResp.getCertificate()); ok && err == nil {
+				log.Println("Generated certificates for worker node", v.GetHostname(), ": verified")
+			}
+			hostnames := v.GetHostname() + "," + v.GetIpAddress()
+			caResp, err = MakeNodeCertificateReq(certRequest,
+				cacert, cakey, config, v.GetHostname(), hostnames, v.GetIpAddress())
+			if err != nil {
+				return nil, err
+			}
+			certFiles[v.GetHostname()+".cert"] = caResp.getCertificate()
+			certFiles[v.GetHostname()+".akey"] = caResp.getKey()
 		}
-		hostnames := v.GetHostname() + "," + v.GetIpAddress()
-		caResp, err = MakeNodeCertificateReq(certRequest,
-			cacert, cakey, config, v.GetHostname(), hostnames)
-		if err != nil {
-			return nil, err
-		}
-		certFiles[v.GetHostname()+".cert"] = caResp.getCertificate()
-		certFiles[v.GetHostname()+".akey"] = caResp.getKey()
 	}
 
 	// create proxy cert
 	caResp, err = MakeKubeCertificateReq(certRequest,
-		cacert, cakey, config, "proxy", "")
+		cacert, cakey, config, "kube-proxy", "")
 	if err != nil {
 		return nil, err
 	}
 	if ok, err := verify(openssl, cacert, caResp.getCertificate()); ok && err == nil {
 		log.Println("Generated certificates for kupe-proxy : verified")
 	}
+	certFiles["kubeproxycrt"] = caResp.getCertificate()
+	certFiles["kubeproxykey"] = caResp.getKey()
 
 	// create API cert
 	addr, subnet, err := net.ParseCIDR(serviceCidr)
@@ -394,16 +401,18 @@ func GenerateTenantCerts(certClient []CertClient, path, tenant, serviceCidr stri
 	// add entire service cidr to api certificate
 	for i := 0; subnet.Contains(addr); i++ {
 		additionalHost = append(additionalHost, addr.String())
-		addr = internal.NextIP(addr, 1)
+		addr = netpool.NextIP(addr, 1)
 	}
 	caResp, err = MakeKubeCertificateReq(certRequest,
-		cacert, cakey, config, "api", hostAsList(certClient))
+		cacert, cakey, config, "kubernetes", hostAsList(certClient))
 	if err != nil {
 		return nil, err
 	}
 	if ok, err := verify(openssl, cacert, caResp.getCertificate()); ok && err == nil {
 		log.Println("Generated certificates for kupe-api : verified")
 	}
+	certFiles["kubeapicrt"] = caResp.getCertificate()
+	certFiles["kubeapikey"] = caResp.getKey()
 
 	return certFiles, nil
 }
