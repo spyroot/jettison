@@ -1,23 +1,40 @@
----
-- hosts: controllers
+- hosts: 127.0.0.1
+  become: no
+  connection: local
+  roles:
+    - download
+
+- hosts: Controller, Worker, Ingress
+  gather_facts: yes
   become: true
   roles:
     - basic
-    - hostnames
-    - basic-master
-  vars:
-#
-- hosts: kubelets
+    - hosts
+    - sshforuser
+    - k8s-client
+
+# K8s ingress nodes
+- hosts: Ingress
   become: true
+  gather_facts: "no"
   roles:
-    - basic
-    - hostnames
-  vars:
-# ingress controller section
-- hosts: ingress
-  become: true
-  roles:
-    - hostnames
     - ingress
-    - k8scerts
-  vars:
+    - kubeproxy-certs
+
+#K8S master controller
+- hosts: Controller
+  become: true
+  gather_facts: "no"
+  roles:
+    - master-node
+    - encryption
+    - etcd
+    - kubemasters
+    - k8sroles
+
+# workers nodes
+- hosts: Worker
+  become: true
+  gather_facts: "no"
+  roles:
+    - workers
