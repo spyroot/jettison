@@ -15,7 +15,7 @@ limitations under the License.
 
 Basic helpers for unit testing.
 
-Author Mustafa Bayramov
+Author spyroot
 mbaraymov@vmware.com
 */
 package vcenter
@@ -49,7 +49,7 @@ func (v *MinVimConfig) VimUsername() string {
 	return "Administrator@vmwarelab.edu"
 }
 func (v *MinVimConfig) VimPassword() string {
-	return "***REMOVED***"
+	return ""
 }
 
 func (v *MinVimConfig) Datacenter() string {

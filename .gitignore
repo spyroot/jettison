@@ -1,3 +1,6 @@
+go.sum
+assetgen
+t.txt
 vcenter/.DS_Store
 dbutil/.DS_Store
 .DS_Store

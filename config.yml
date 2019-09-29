@@ -16,53 +16,49 @@ infra:
     password: "VMware1!"
     datacenter: "Datacenter"
   cluster:
-      # allocate /24 for each pod.  Note it very simple pool manager
-      # for more advanced cases centralized solution need to be used
-      cluster-cidr: 10.20.0.0/16
-      service-cidr: 10.32.0.0/24
-      cluster-dns: 10.32.0.10
-      allocate-size: 24                    # how much allocate per pod 24, 25 etc
+     # allocate /24 for each pod.  Note it very simple pool manager
+     # for more advanced cases centralized solution need to be used
+    cluster-cidr: 10.20.0.0/16
+    service-cidr: 10.32.0.0/24
+    cluster-dns: 10.32.0.10
+    allocate-size: 24                    # how much allocate per pod 24, 25 etc
   deployment:
-      ingress:
-          prefix: ingress
-          domainSuffix: vmwarelab.edu
-          static: true
-          desiredAddress: 172.16.84.110/24
-          gateway: 172.16.84.100
-          vmTemplateName: ubuntu19-template
-          clusterName: mgmt
-          #logicalSwitch: "test-segment"
-      controller:
-          prefix: controller
-          domainSuffix: vmwarelab.edu
-          desiredCount: 3
-          desiredAddress: 172.16.84.128/24
-          gateway: 172.16.84.100
-          vmTemplateName: ubuntu19-template
-          clusterName: mgmt
-          #logicalSwitch: "test-segment"
-          servicescidr: 172.16.84.0/24
-          servicedns: 172.16.84.100
-      worker:
-          prefix: kubelet
-          domainSuffix: vmwarelab.edu
-          desiredCount: 3
-          desiredAddress: 172.16.84.128/24                        # this address will be used as start
-          gateway: 172.16.84.100
-          vmTemplateName: ubuntu19-template
-          clusterName: mgmt
-          #logicalSwitch: "test-segment"
-      #do backup before copy
+    ingress:
+        prefix: ingress
+        domainSuffix: vmwarelab.edu
+        static: true
+        desiredAddress: 172.16.84.110/24
+        gateway: 172.16.84.100
+        vmTemplateName: ubuntu19-template
+        clusterName: mgmt
+    controller:
+        prefix: controller
+        domainSuffix: vmwarelab.edu
+        desiredCount: 3
+        desiredAddress: 172.16.84.128/24
+        gateway: 172.16.84.100
+        vmTemplateName: ubuntu19-template
+        clusterName: mgmt
+        servicescidr: 172.16.84.0/24
+        servicedns: 172.16.84.100
+    worker:
+        prefix: kubelet
+        domainSuffix: vmwarelab.edu
+        desiredCount: 3
+        desiredAddress: 172.16.84.128/24
+        gateway: 172.16.84.100
+        vmTemplateName: ubuntu19-template
+        clusterName: mgmt
   ansible:
-      ansibleConfig: /Users/spyroot/.ansible/
-      ansiblePath: /usr/local/bin/ansible
-      ansibleTemplate: /Users/spyroot/.ansible/tenant/
-      ansibleInventory: /usr/local/etc/ansible/
+    ansibleConfig: /Users/spyroot/.ansible/
+    ansiblePath: /usr/local/bin/ansible
+    ansibleTemplate: /Users/spyroot/.ansible/tenant/
+    ansibleInventory: /usr/local/etc/ansible/
   sshGlobal:
-      sshpassPath:   "/usr/local/bin/sshpass"
-      sshCopyIdPath: "/usr/bin/ssh-copy-id"
-      Username:   "vmware"
-      Password:   "VMware1!"
-      Privatekey:   "/Users/spyroot/.ssh/id_rsa"
-      Publickey:   "/Users/spyroot/.ssh/id_rsa.pub"
-      Port:  22
+    sshpassPath: "/usr/local/bin/sshpass"
+    sshCopyIdPath: "/usr/bin/ssh-copy-id"
+    Username: "vmware"
+    Password: "VMware1!"
+    Privatekey: "/Users/spyroot/.ssh/id_rsa"
+    Publickey: "/Users/spyroot/.ssh/id_rsa.pub"
+    Port: 22
